@@ -11,17 +11,34 @@ function buildFormState(record) {
   return state;
 }
 
+const FIELD_LABELS = Object.fromEntries(EDITABLE_FIELDS.map((f) => [f.key, f.label]));
+function fieldLabel(key) {
+  return FIELD_LABELS[key] || key;
+}
+
 export default function RecordDrawer({ record, onClose, onChanged }) {
   const [current, setCurrent] = useState(record);
   const [form, setForm] = useState(buildFormState(record));
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [history, setHistory] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     setCurrent(record);
     setForm(buildFormState(record));
     setActionError("");
+    refreshHistory(record.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record.id]);
+
+  async function refreshHistory(recordId) {
+    try {
+      setHistory(await api.getRecordHistory(recordId));
+    } catch {
+      // non-critical: leave history empty rather than blocking the drawer
+    }
+  }
 
   const errorsByField = {};
   for (const e of current.validation_errors) {
@@ -45,6 +62,7 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
       const revalidated = await api.revalidateRecord(current.id);
       setCurrent(revalidated);
       setForm(buildFormState(revalidated));
+      await refreshHistory(current.id);
       onChanged();
     } catch (err) {
       setActionError(err.message);
@@ -140,6 +158,36 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
                 {errorsByField[f.key] && <div className="field-error">{errorsByField[f.key]}</div>}
               </div>
             ))}
+          </div>
+
+          <div className="history-section">
+            <button
+              type="button"
+              className="history-toggle"
+              onClick={() => setHistoryOpen((v) => !v)}
+            >
+              {historyOpen ? "▾" : "▸"} Edit history ({history.length})
+            </button>
+            {historyOpen && (
+              history.length === 0 ? (
+                <div className="upload-file-empty">No changes recorded yet.</div>
+              ) : (
+                <ul className="history-list">
+                  {history.map((h) => (
+                    <li key={h.id}>
+                      <span className="history-field">{fieldLabel(h.field)}</span>
+                      <span className="history-values">
+                        {h.old_value ?? "—"} → {h.new_value ?? "—"}
+                      </span>
+                      <span className="history-meta">
+                        {h.source === "reconciliation" ? "auto-reconciled" : "manual edit"} ·{" "}
+                        {new Date(h.edited_at).toLocaleString()}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
           </div>
 
           {actionError && <div className="field-error" style={{ marginTop: 10 }}>{actionError}</div>}

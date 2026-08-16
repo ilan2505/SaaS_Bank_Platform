@@ -13,12 +13,18 @@ class FakeProvider(AIProvider):
         return self._result
 
 
+def _fake_pdf_bytes(filename: str) -> bytes:
+    # Unique per filename so tests uploading several "different" PDFs in one
+    # batch don't collide with the content-hash duplicate-detection guard.
+    return f"%PDF-1.4 fake content for {filename}".encode()
+
+
 def _upload_with_provider(client, batch_id, provider, filename="doc.pdf"):
     app.dependency_overrides[get_provider] = lambda: provider
     try:
         r = client.post(
             f"/api/batches/{batch_id}/upload/pdf",
-            files={"files": (filename, io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
+            files={"files": (filename, io.BytesIO(_fake_pdf_bytes(filename)), "application/pdf")},
         )
     finally:
         del app.dependency_overrides[get_provider]
@@ -162,7 +168,7 @@ def test_original_pdf_is_stored_and_servable(client, batch_id):
     r = client.get(f"/api/records/{record['id']}/source-file")
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
-    assert r.content == b"%PDF-1.4 fake"
+    assert r.content == _fake_pdf_bytes("statement.pdf")
 
 
 def test_deleting_document_removes_its_records_and_stored_pdf(client, batch_id):

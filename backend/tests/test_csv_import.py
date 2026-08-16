@@ -92,19 +92,20 @@ def test_delete_unknown_batch_returns_404(client):
 
 
 def test_filter_records_by_source_document_name(client, batch_id):
-    csv_content = (
+    csv_header = (
         "reference,transaction_date,value_date,description,gross_amount,fee_amount,"
         "tax_amount,net_amount,currency,counterparty_name,counterparty_account,country,"
         "category,invoice_number,payment_method\n"
-        "TX-1,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n"
     )
     client.post(
         f"/api/batches/{batch_id}/upload/csv",
-        files={"file": ("first.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+        files={"file": ("first.csv", io.BytesIO((csv_header + "TX-1,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n").encode()), "text/csv")},
     )
+    # Different content (TX-2, not TX-1) so this isn't rejected as a
+    # byte-identical duplicate of first.csv by the content-hash guard.
     client.post(
         f"/api/batches/{batch_id}/upload/csv",
-        files={"file": ("second.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+        files={"file": ("second.csv", io.BytesIO((csv_header + "TX-2,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n").encode()), "text/csv")},
     )
 
     r = client.get(f"/api/batches/{batch_id}/records", params={"source_document_name": "first.csv"})
@@ -114,19 +115,18 @@ def test_filter_records_by_source_document_name(client, batch_id):
 
 
 def test_delete_document_removes_only_its_records(client, batch_id):
-    csv_content = (
+    csv_header = (
         "reference,transaction_date,value_date,description,gross_amount,fee_amount,"
         "tax_amount,net_amount,currency,counterparty_name,counterparty_account,country,"
         "category,invoice_number,payment_method\n"
-        "TX-1,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n"
     )
     client.post(
         f"/api/batches/{batch_id}/upload/csv",
-        files={"file": ("first.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+        files={"file": ("first.csv", io.BytesIO((csv_header + "TX-1,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n").encode()), "text/csv")},
     )
     client.post(
         f"/api/batches/{batch_id}/upload/csv",
-        files={"file": ("second.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+        files={"file": ("second.csv", io.BytesIO((csv_header + "TX-2,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n").encode()), "text/csv")},
     )
 
     r = client.delete(f"/api/batches/{batch_id}/documents", params={"filename": "first.csv"})

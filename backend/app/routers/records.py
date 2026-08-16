@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import FinancialRecord, RecordStatus
-from app.schemas import RecordOut, RecordUpdate, ValidationError
+from app.schemas import EditHistoryOut, RecordOut, RecordUpdate, ValidationError
+from app.services.audit import log_changes, snapshot
 from app.services.storage import resolve
 from app.services.validation import (
     check_business_rules,
@@ -75,6 +76,7 @@ def edit_record(record_id: str, payload: RecordUpdate, db: Session = Depends(get
     called, matching the assignment's explicit correct-then-revalidate flow.
     """
     record = _get_record_or_404(record_id, db)
+    before = snapshot(record)
 
     merged = record_to_raw_dict(record)
     updates = payload.model_dump(exclude_unset=True)
@@ -87,9 +89,17 @@ def edit_record(record_id: str, payload: RecordUpdate, db: Session = Depends(get
     record.raw_values = raw_kept
     record.status = RecordStatus.NEEDS_REVIEW
 
+    log_changes(db, record, before, source="edit")
+
     db.commit()
     db.refresh(record)
     return record
+
+
+@router.get("/{record_id}/history", response_model=list[EditHistoryOut])
+def get_record_history(record_id: str, db: Session = Depends(get_db)):
+    record = _get_record_or_404(record_id, db)
+    return record.edit_history
 
 
 @router.post("/{record_id}/revalidate", response_model=RecordOut)

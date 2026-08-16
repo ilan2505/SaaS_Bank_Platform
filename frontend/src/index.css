@@ -514,6 +514,60 @@ tr.record-row:hover {
   margin-bottom: 12px;
 }
 
+.history-section {
+  margin-top: 18px;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+}
+
+.history-toggle {
+  background: transparent;
+  color: #555;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.history-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.history-list li {
+  background: #f7f8fa;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.history-field {
+  display: block;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 2px;
+}
+
+.history-values {
+  display: block;
+  color: #1a1d23;
+  word-break: break-word;
+}
+
+.history-meta {
+  display: block;
+  color: #999;
+  margin-top: 3px;
+  font-size: 11px;
+}
+
 .toast {
   position: fixed;
   bottom: 20px;

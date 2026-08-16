@@ -71,6 +71,9 @@ export const api = {
   getRecordErrors: (recordId) =>
     fetch(`${API_URL}/api/records/${recordId}/errors`).then(handle),
 
+  getRecordHistory: (recordId) =>
+    fetch(`${API_URL}/api/records/${recordId}/history`).then(handle),
+
   editRecord: (recordId, patch) =>
     fetch(`${API_URL}/api/records/${recordId}`, {
       method: "PATCH",

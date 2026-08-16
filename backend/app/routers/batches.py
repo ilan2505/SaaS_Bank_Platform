@@ -9,7 +9,7 @@ from app.services.ai_provider import AIProvider
 from app.services.csv_import import import_csv
 from app.services.pdf_extraction import get_provider, import_pdf
 from app.services.reconciliation import reconcile_batch
-from app.services.storage import delete_batch_uploads, resolve, save_pdf
+from app.services.storage import delete_batch_uploads, hash_content, resolve, save_pdf
 from app.upload_guards import check_pdf_signature, check_upload_size
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
@@ -109,7 +109,14 @@ async def upload_csv(batch_id: str, file: UploadFile, db: Session = Depends(get_
 
     content = await file.read()
     check_upload_size(content, file.filename)
+    content_hash = hash_content(content)
+    duplicate = _find_duplicate_document(db, batch_id, content_hash)
+    if duplicate:
+        raise HTTPException(409, f"This file's content is identical to an already-uploaded document: '{duplicate}'")
+
     records = import_csv(content, file.filename, batch_id)
+    for r in records:
+        r.source_document_hash = content_hash
 
     db.add_all(records)
     db.commit()
@@ -144,16 +151,27 @@ async def upload_pdfs(
     }
 
     all_records = []
+    seen_hashes: dict[str, str] = {}  # catches duplicates within this same multi-file upload
     for file in files:
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(400, f"'{file.filename}' is not a PDF")
         content = await file.read()
         check_upload_size(content, file.filename)
         check_pdf_signature(content, file.filename)
+
+        content_hash = hash_content(content)
+        duplicate = _find_duplicate_document(db, batch_id, content_hash) or seen_hashes.get(content_hash)
+        if duplicate:
+            raise HTTPException(
+                409, f"This file's content is identical to an already-uploaded document: '{duplicate}'"
+            )
+        seen_hashes[content_hash] = file.filename
+
         stored_path = save_pdf(batch_id, file.filename, content)
         records = import_pdf(provider, content, file.filename, batch_id, existing_refs)
         for r in records:
             r.source_document_path = stored_path
+            r.source_document_hash = content_hash
             if r.reference:
                 existing_refs.add(r.reference)
         all_records.extend(records)
@@ -168,6 +186,15 @@ async def upload_pdfs(
         db.refresh(r)
 
     return UploadResult(batch_id=batch_id, records_created=len(all_records), records=all_records)
+
+
+def _find_duplicate_document(db: Session, batch_id: str, content_hash: str) -> str | None:
+    return db.scalar(
+        select(FinancialRecord.source_document_name).where(
+            FinancialRecord.batch_id == batch_id,
+            FinancialRecord.source_document_hash == content_hash,
+        )
+    )
 
 
 def _summarize(batch: ImportBatch) -> BatchSummary:

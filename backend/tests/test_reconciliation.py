@@ -17,9 +17,10 @@ def _upload_pdf(client, batch_id, records, filename="doc.pdf"):
     provider = FakeProvider(ExtractionResult(records=records))
     app.dependency_overrides[get_provider] = lambda: provider
     try:
+        content = f"%PDF-1.4 fake content for {filename}".encode()
         return client.post(
             f"/api/batches/{batch_id}/upload/pdf",
-            files={"files": (filename, io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
+            files={"files": (filename, io.BytesIO(content), "application/pdf")},
         )
     finally:
         del app.dependency_overrides[get_provider]

@@ -97,6 +97,10 @@ class FinancialRecord(Base):
     # can show the source document next to the extracted fields. Only set for
     # PDF-sourced records; CSV rows have no separate "document" to display.
     source_document_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # SHA-256 of the raw uploaded file's bytes. All records extracted from the
+    # same upload share this value, letting a later upload be checked against
+    # every document already in the batch for byte-identical duplicates.
+    source_document_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     extraction_confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
 
     status: Mapped[str] = mapped_column(
@@ -115,7 +119,29 @@ class FinancialRecord(Base):
     )
 
     batch: Mapped["ImportBatch"] = relationship(back_populates="records")
+    edit_history: Mapped[list["RecordEditHistory"]] = relationship(
+        cascade="all, delete-orphan", order_by="RecordEditHistory.edited_at"
+    )
 
     @property
     def has_source_file(self) -> bool:
         return self.source_document_path is not None
+
+
+class RecordEditHistory(Base):
+    """One row per field that actually changed value, either through a user
+    correction (`source="edit"`) or automatic cross-document reconciliation
+    (`source="reconciliation"`). There's no user/auth concept in this system
+    (see README), so this tracks *what* changed and *when*, not *who* changed
+    it — attribution would need an auth layer this assignment doesn't ask for.
+    """
+
+    __tablename__ = "record_edit_history"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    record_id: Mapped[str] = mapped_column(ForeignKey("financial_records.id"), nullable=False)
+    field: Mapped[str] = mapped_column(String, nullable=False)
+    old_value: Mapped[str | None] = mapped_column(String, nullable=True)
+    new_value: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="edit")
+    edited_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

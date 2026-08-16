@@ -6,6 +6,7 @@ this would be object storage (S3 or equivalent) behind the same two
 functions, so callers wouldn't need to change.
 """
 
+import hashlib
 import shutil
 import uuid
 from pathlib import Path
@@ -34,3 +35,7 @@ def delete_batch_uploads(batch_id: str) -> None:
     batch_dir = UPLOADS_ROOT / batch_id
     if batch_dir.exists():
         shutil.rmtree(batch_dir, ignore_errors=True)
+
+
+def hash_content(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()

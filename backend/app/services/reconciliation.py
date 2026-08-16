@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import FinancialRecord
+from app.services.audit import log_changes, snapshot
 from app.services.validation import (
     AMOUNT_TOLERANCE,
     check_business_rules,
@@ -50,11 +51,13 @@ def reconcile_batch(db: Session, batch_id: str) -> None:
     ).all()
 
     changed: list[FinancialRecord] = []
+    snapshots: dict[str, dict] = {}
     for record in records:
         if record.counterparty_name:
             continue
         match = _find_match(record, records)
         if match:
+            snapshots[record.id] = snapshot(record)
             record.counterparty_name = match.counterparty_name
             record.counterparty_account = match.counterparty_account
             changed.append(record)
@@ -64,6 +67,7 @@ def reconcile_batch(db: Session, batch_id: str) -> None:
 
     all_refs = {r.reference for r in records if r.reference}
     for record in changed:
+        log_changes(db, record, snapshots[record.id], source="reconciliation")
         raw = record_to_raw_dict(record)
         typed, raw_kept, parse_errors = parse_record_fields(raw)
         other_refs = all_refs - ({record.reference} if record.reference else set())

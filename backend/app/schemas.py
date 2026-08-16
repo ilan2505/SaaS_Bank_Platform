@@ -97,3 +97,14 @@ class UploadResult(BaseModel):
     batch_id: str
     records_created: int
     records: list[RecordOut]
+
+
+class EditHistoryOut(BaseModel):
+    id: str
+    field: str
+    old_value: str | None
+    new_value: str | None
+    source: str
+    edited_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
