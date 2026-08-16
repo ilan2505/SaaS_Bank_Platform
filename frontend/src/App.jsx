@@ -122,13 +122,14 @@ export default function App() {
 
         {selectedId && (
           <>
-            <SummaryBar summary={summary} />
             <UploadPanel
               batchId={selectedId}
               onUploaded={handleUploaded}
               csvDocuments={summary?.csv_documents ?? []}
               pdfDocuments={summary?.pdf_documents ?? []}
             />
+
+            <SummaryBar summary={summary} />
 
             <div className="panel">
               <h2>Records</h2>

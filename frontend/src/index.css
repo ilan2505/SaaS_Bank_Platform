@@ -173,6 +173,7 @@ button.danger {
 }
 
 .summary-card {
+  flex: 1;
   background: #fff;
   border-radius: 10px;
   padding: 14px 18px;
