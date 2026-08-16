@@ -10,6 +10,7 @@ from app.services.csv_import import import_csv
 from app.services.pdf_extraction import get_provider, import_pdf
 from app.services.reconciliation import reconcile_batch
 from app.services.storage import delete_batch_uploads, resolve, save_pdf
+from app.upload_guards import check_pdf_signature, check_upload_size
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
 
@@ -107,6 +108,7 @@ async def upload_csv(batch_id: str, file: UploadFile, db: Session = Depends(get_
         raise HTTPException(400, "Expected a .csv file")
 
     content = await file.read()
+    check_upload_size(content, file.filename)
     records = import_csv(content, file.filename, batch_id)
 
     db.add_all(records)
@@ -146,6 +148,8 @@ async def upload_pdfs(
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(400, f"'{file.filename}' is not a PDF")
         content = await file.read()
+        check_upload_size(content, file.filename)
+        check_pdf_signature(content, file.filename)
         stored_path = save_pdf(batch_id, file.filename, content)
         records = import_pdf(provider, content, file.filename, batch_id, existing_refs)
         for r in records:
