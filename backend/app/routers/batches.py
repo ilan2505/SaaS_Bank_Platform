@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import FinancialRecord, ImportBatch, RecordStatus
+from app.models import FinancialRecord, ImportBatch, RecordStatus, SourceType
 from app.schemas import BatchCreate, BatchOut, BatchSummary, RecordOut, UploadResult
 from app.services.ai_provider import AIProvider
 from app.services.csv_import import import_csv
@@ -138,5 +138,6 @@ def _summarize(batch: ImportBatch) -> BatchSummary:
         needs_review_count=sum(1 for r in records if r.status == RecordStatus.NEEDS_REVIEW),
         valid_count=sum(1 for r in records if r.status == RecordStatus.VALID),
         validated_count=sum(1 for r in records if r.status == RecordStatus.VALIDATED),
-        source_documents=sorted({r.source_document_name for r in records}),
+        csv_documents=sorted({r.source_document_name for r in records if r.source_type == SourceType.CSV}),
+        pdf_documents=sorted({r.source_document_name for r in records if r.source_type == SourceType.PDF}),
     )

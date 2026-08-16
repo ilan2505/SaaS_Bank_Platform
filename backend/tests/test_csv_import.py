@@ -20,7 +20,8 @@ def test_full_sample_csv_import(client, batch_id):
     assert summary["total_records"] == 30
     assert summary["needs_review_count"] == 13
     assert summary["valid_count"] == 17
-    assert summary["source_documents"] == ["transactions_import.csv"]
+    assert summary["csv_documents"] == ["transactions_import.csv"]
+    assert summary["pdf_documents"] == []
 
 
 def test_source_filename_and_batch_association_preserved(client, batch_id):

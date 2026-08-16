@@ -22,7 +22,8 @@ class BatchSummary(BaseModel):
     needs_review_count: int
     valid_count: int
     validated_count: int
-    source_documents: list[str]
+    csv_documents: list[str]
+    pdf_documents: list[str]
 
     model_config = ConfigDict(from_attributes=True)
 

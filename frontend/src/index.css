@@ -208,16 +208,71 @@ button.danger {
   color: #555;
 }
 
-.upload-row {
+.upload-layout {
   display: flex;
-  gap: 24px;
+  gap: 28px;
+  align-items: flex-start;
   flex-wrap: wrap;
 }
 
-.upload-group {
+.upload-controls {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.upload-file-lists {
+  display: flex;
+  gap: 28px;
+  flex: 1;
+  min-width: 300px;
+  flex-wrap: wrap;
+}
+
+.upload-file-list {
+  min-width: 220px;
+  flex: 1;
+}
+
+.upload-file-list h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #666;
+  margin: 0 0 8px;
+}
+
+.upload-file-count {
+  color: #999;
+  font-weight: 400;
+}
+
+.upload-file-empty {
+  font-size: 13px;
+  color: #999;
+}
+
+.upload-file-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.upload-file-list li {
+  font-size: 13px;
+  padding: 5px 9px;
+  background: #f4f5f8;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .filters {
