@@ -126,7 +126,7 @@ software_engineer_task/
 │   └── src/
 │       ├── api.js                   Thin fetch wrapper over the backend API
 │       ├── App.jsx                  Top-level state/orchestration
-│       └── components/              Sidebar, UploadPanel, SummaryBar, RecordTable, RecordDrawer
+│       └── components/              Sidebar, UploadPanel, SummaryBar, AnalyticsPanel, RecordTable, RecordDrawer
 ├── docker-compose.yml
 └── samples/                         The provided assignment files
 ```
@@ -233,6 +233,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **Duplicate-document detection** (optional bonus item, implemented): every upload is hashed (SHA-256) and rejected with a 409 if byte-identical content already exists in the batch — catches the same file under a different name, and duplicates within one multi-file PDF upload, not just an exact filename match.
 - **Audit history** (optional bonus item, implemented): every field that actually changes value — through a manual correction or an automatic reconciliation backfill — is logged with its old value, new value, source, and timestamp, retrievable via `GET /records/{id}/history` and shown in the record drawer.
 - Cross-document reconciliation: a record missing `counterparty_name` whose description references another same-batch record's reference/invoice_number, with a matching amount, gets it backfilled automatically after every upload, regardless of upload order.
+- **Analytics panel** (not in the assignment at all — added beyond spec): a status breakdown (stacked bar) and total volume by category (horizontal bar, sorted descending) for the whole batch, independent of the active table filters. Volume is deliberately labeled "absolute," not "spend" or "income" — this sample data mixes invoice-style amounts (recorded at face value) with bank-statement-style amounts (recorded as signed cash flow) for the same real payment (see the `INV-LX-441` / `STM-7713` example under [Assumptions](#assumptions)), so the sign alone can't be trusted to mean expense vs. income without per-category business logic no one asked for here.
 - 60 passing tests, run automatically on every push via GitHub Actions (`.github/workflows/tests.yml` — badge above); Dockerfiles + docker-compose.
 
 **Not implemented** (all listed as optional bonus items in the assignment): authentication, pagination, background job processing (extraction is synchronous), multi-tenant isolation, provider fallback, cost/token usage tracking, field-level confidence display (only a record-level confidence is shown), deployment.

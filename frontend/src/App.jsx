@@ -4,6 +4,7 @@ import SummaryBar from "./components/SummaryBar";
 import UploadPanel from "./components/UploadPanel";
 import RecordTable from "./components/RecordTable";
 import RecordDrawer from "./components/RecordDrawer";
+import AnalyticsPanel from "./components/AnalyticsPanel";
 import { api } from "./api";
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [summary, setSummary] = useState(null);
   const [records, setRecords] = useState([]);
+  const [allRecords, setAllRecords] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [documentFilter, setDocumentFilter] = useState("");
@@ -29,16 +31,18 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const [s, r] = await Promise.all([
+      const [s, r, all] = await Promise.all([
         api.getBatchSummary(batchId),
         api.listRecords(batchId, {
           status: statusFilter,
           sourceType: sourceFilter,
           sourceDocument: documentFilter,
         }),
+        api.listRecords(batchId),
       ]);
       setSummary(s);
       setRecords(r);
+      setAllRecords(all);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -82,6 +86,7 @@ export default function App() {
       setSelectedId(null);
       setSummary(null);
       setRecords([]);
+      setAllRecords([]);
       setSelectedRecord(null);
     }
   }
@@ -130,6 +135,8 @@ export default function App() {
             />
 
             <SummaryBar summary={summary} />
+
+            <AnalyticsPanel records={allRecords} />
 
             <div className="panel">
               <h2>Records</h2>
