@@ -70,7 +70,7 @@ cd backend
 ./.venv/Scripts/python.exe -m pytest -v
 ```
 
-38 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
+43 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
 
 ## Environment variables
 
@@ -108,7 +108,9 @@ software_engineer_task/
 │   │   │   ├── csv_import.py        CSV → FinancialRecord rows
 │   │   │   ├── ai_provider.py       Provider-agnostic interface
 │   │   │   ├── anthropic_provider.py  Anthropic implementation
-│   │   │   └── pdf_extraction.py    Orchestrates provider → FinancialRecord rows
+│   │   │   ├── pdf_extraction.py    Orchestrates provider → FinancialRecord rows
+│   │   │   ├── reconciliation.py    Cross-document counterparty backfill (post-upload)
+│   │   │   └── storage.py           Uploaded PDF persistence + retrieval
 │   │   └── routers/
 │   │       ├── batches.py           batch + upload endpoints
 │   │       └── records.py           record + validation endpoints
@@ -124,11 +126,12 @@ software_engineer_task/
 
 **Key decisions:**
 
-- **One validation module, three callers.** `app/services/validation.py` is the *only* place that knows what a valid `financial_record` looks like. CSV import, PDF extraction, and the record-edit/revalidate endpoint all call the same `parse_record_fields` / `check_business_rules` functions. This was a deliberate choice so that "server-side validation even if the frontend validates too" isn't just true by accident — there is structurally only one rule engine, so CSV and PDF paths can't drift apart or duplicate logic (and a change to a business rule is a one-file change).
+- **One validation module, four callers.** `app/services/validation.py` is the *only* place that knows what a valid `financial_record` looks like. CSV import, PDF extraction, the record-edit/revalidate endpoint, and reconciliation (after backfilling a field) all call the same `parse_record_fields` / `check_business_rules` functions. This was a deliberate choice so that "server-side validation even if the frontend validates too" isn't just true by accident — there is structurally only one rule engine, so no path can drift out of sync or duplicate logic (and a change to a business rule is a one-file change).
 - **SQLite via SQLAlchemy, Postgres-ready.** All access goes through the SQLAlchemy ORM with standard, portable column types (`String`, `Date`, `Numeric`, `JSON`). Switching to Postgres is a `DATABASE_URL` change plus swapping the driver in `requirements.txt` (`psycopg2-binary` / `asyncpg`) — no query rewriting, since nothing SQLite-specific is used (the only SQLite-only line is the `check_same_thread` connect arg, which is conditional on the URL).
 - **AI provider isolated behind an interface** (`ai_provider.py`). The router depends on `AIProvider` via FastAPI `Depends(get_provider)`, not on the Anthropic SDK directly — this is what lets tests substitute a `FakeProvider` and lets a second provider be added by writing one new file.
 - **UUIDs as primary keys** (`str`, generated client-side) rather than auto-increment integers, so records could be created by future distributed workers (e.g. background PDF processing) without a round-trip to get an ID first.
 - **Synchronous request/response, no background jobs.** PDF extraction happens inline during the upload request. This is the simplest thing that works correctly within the assignment's time box; see [Production improvements](#production-improvements) for what changes at scale.
+- **Reconciliation is a full-batch re-scan on every upload, not an incremental diff.** `reconcile_batch` re-checks every record in the batch (not just the ones just uploaded) each time a CSV or PDF is uploaded, so it doesn't matter which order the invoice and the bank statement that references it arrive in — whichever arrives second resolves the match. This trades a little redundant work (batches here are small) for not having to reason about partial/one-directional backfill logic.
 
 ## Data model
 
@@ -204,7 +207,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 
 ## Completed / incomplete features
 
-**Completed:** all 9 workflow steps and all 9 required API endpoints from the assignment, plus batch and per-document delete endpoints and a source-document filter; CSV import (never rejects the whole file); real Anthropic PDF extraction for both invoice types and the multi-line bank statement; full server-side validation shared across both import paths; edit → revalidate → validate lifecycle with the 409 guard; batch summary; frontend covering upload, filtering (status + source + source filename), field-level error display, correction, and the record detail drawer — which for PDF-sourced records also renders the original PDF side-by-side with the extracted fields, so a reviewer can check the extraction against the source document without leaving the page; batch management (delete with confirmation, search-by-name, sort by date/name) for working with many batches at once; per-document deletion (remove one uploaded file and all the records it produced, without deleting the whole batch) with a duplicate-filename warning on re-upload; 38 passing tests; Dockerfiles + docker-compose.
+**Completed:** all 9 workflow steps and all 9 required API endpoints from the assignment, plus batch and per-document delete endpoints and a source-document filter; CSV import (never rejects the whole file); real Anthropic PDF extraction for both invoice types and the multi-line bank statement; full server-side validation shared across both import paths; edit → revalidate → validate lifecycle with the 409 guard; batch summary; frontend covering upload, filtering (status + source + source filename), field-level error display, correction, and the record detail drawer — which for PDF-sourced records also renders the original PDF side-by-side with the extracted fields, so a reviewer can check the extraction against the source document without leaving the page; batch management (delete with confirmation, search-by-name, sort by date/name) for working with many batches at once; per-document deletion (remove one uploaded file and all the records it produced, without deleting the whole batch) with a duplicate-filename warning on re-upload; cross-document reconciliation (a record missing `counterparty_name` whose description references another same-batch record's reference/invoice_number, with a matching amount, gets it backfilled automatically after every upload, regardless of upload order); 43 passing tests; Dockerfiles + docker-compose.
 
 **Not implemented** (all listed as optional bonus items in the assignment): authentication, pagination, background job processing (extraction is synchronous), idempotent import / duplicate-document detection, audit history for edits, multi-tenant isolation, provider fallback, cost/token usage tracking, field-level confidence display (only a record-level confidence is shown).
 
@@ -232,17 +235,18 @@ Roughly in priority order if this were going to production:
 8. **Structured logging + tracing** around the AI call (latency, token counts, error rates) — currently just Python `logging`.
 9. **Field-level confidence** from the provider (currently only record-level) to let the UI highlight exactly which extracted fields are shaky.
 10. **Downstream export of `VALIDATED` records.** Today, "Validate" only flips a status flag in place — the record was already persisted at import/extraction time, and validating doesn't move it anywhere. In production, a `VALIDATED` record is the trigger for the next step in the pipeline: exporting/syncing it to the organization's actual accounting system (ERP, general ledger) or emitting an event/webhook for downstream consumers, plus stamping it with an export timestamp so it isn't re-sent. That integration is out of scope here (no target system was specified), but the status field already exists as the natural hook to build it on.
-11. **Cross-document reconciliation (invoice ↔ bank statement matching).** The same real-world payment can legitimately enter the system twice from two independent documents — e.g. `invoice_legal_services.pdf` produces one record (`INV-LX-441`, +3,900/+4,680) and the bank statement's `STM-7713` line ("Legal fees INV-LX-441", -4,680) describes the same underlying payment, but as two unrelated records with different references and opposite signs. Today's duplicate check only catches an *identical* `reference` repeated within an import, so it has no way to link these two. This isn't a bug and isn't asked for by the assignment — invoices and bank statements are explicitly specified as independent sources, each producing its own record(s) — but any real deployment that aggregates validated amounts (e.g. "total spend this month") would need a reconciliation step (matching by amount/date/invoice-number-in-description, then either suppressing the duplicate or explicitly linking the two records) to avoid double-counting.
+11. **Full invoice ↔ bank statement linking (beyond the counterparty backfill already implemented).** As of `app/services/reconciliation.py`, a record missing `counterparty_name` whose *description* contains another same-batch record's `reference`/`invoice_number` — with a matching amount, e.g. the bank statement's `STM-7713` line ("Legal fees INV-LX-441", -4,680) against the invoice record `INV-LX-441` (+4,680) — gets its counterparty backfilled from that match automatically, re-running after every upload so order doesn't matter (invoice-then-statement or statement-then-invoice both resolve). What this **doesn't** do: the two records still exist as fully independent rows with no stored link between them, opposite signs, and nothing stops both from being validated and both being counted in a downstream sum — so the double-counting risk described in earlier discussion is only half-solved (the missing-field annoyance is gone; the aggregation-safety problem remains). A full solution would store the match itself (e.g. a `reconciled_with_record_id` field) and either suppress one side from totals or make the link explicit in the UI.
 
 ## Tests
 
-`backend/tests/`, 38 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
+`backend/tests/`, 43 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
 
 - `test_validation.py` — unit tests directly against the shared validation engine: valid row, invalid date, unsupported currency, inconsistent net_amount (and within-tolerance acceptance), zero/negative amounts, missing required field, duplicate reference, invalid category/country, a syntactically-valid-but-unassigned country code (`"ZZ"`) correctly rejected against the real ISO 3166-1 list, malformed (comma) amount, status transitions including low-confidence PDF forcing review.
 - `test_csv_import.py` — the full provided sample CSV (asserts exactly 30 rows imported, 13 NEEDS_REVIEW / 17 VALID, matching the intentionally-invalid rows), source filename/batch association, a file that mixes one valid and one invalid row (whole file not rejected), batch summary endpoint.
 - `test_correction_flow.py` — validate rejected (409) while NEEDS_REVIEW, full correct → revalidate → VALID → validate → VALIDATED cycle, revalidation that's still invalid, the record-errors endpoint.
 - `test_pdf_extraction.py` — provider error/timeout doesn't crash (produces a NEEDS_REVIEW placeholder), invalid structured response handled gracefully, missing required field → NEEDS_REVIEW, low confidence forces NEEDS_REVIEW even with complete fields, a bank-statement-shaped response produces multiple records, duplicate reference across PDF-extracted records is flagged, original PDF is stored and servable via the source-file endpoint, CSV records correctly report no source file, deleting a document removes its records and its stored PDF.
 - `test_csv_import.py` also covers batch deletion (removes it and cascades to its records; unknown batch → 404), filtering records by source document name, and per-document deletion (removes only that document's records; unknown document → 404).
+- `test_reconciliation.py` — a statement line uploaded *after* the invoice it references is backfilled immediately; one uploaded *before* is backfilled retroactively once the invoice arrives; a CSV row's `invoice_number` reconciles a PDF statement line; an unrelated description is left alone; a reference match with a mismatched amount is correctly treated as a false positive and not linked.
 
 The real Anthropic integration (not part of the automated suite, which must stay deterministic and offline) was verified manually against all three sample PDFs — results in the table under [AI provider integration](#ai-provider-integration).
 
@@ -258,7 +262,7 @@ Provided in `samples/`: `transactions_import.csv`, `invoice_legal_services.pdf`,
 - Every backend service module was exercised against the real sample data before moving on — the CSV importer was run against the actual `transactions_import.csv` and its output checked row-by-row against the 13 intentionally-invalid rows (`test_csv_import.py::test_full_sample_csv_import` pins this: 30 imported / 13 NEEDS_REVIEW / 17 VALID).
 - The AI provider integration was **run for real** against Anthropic's API with all three sample PDFs (not just unit-tested against a fake) — see the results table above, captured directly from that run.
 - The full frontend workflow (create batch → upload CSV → filter to NEEDS_REVIEW → open a record → see the exact invalid field highlighted with its message → correct it → re-run validation → see it become VALID → validate → see it become VALIDATED) was driven end-to-end in a real browser against the running backend, screenshotted at each step, not just assumed to work from the code.
-- The full `pytest` suite (38 tests) passes locally.
+- The full `pytest` suite (43 tests) passes locally.
 
 **Parts that needed correction/redesign during the session:**
 - The initial `datetime.utcnow()` usage in `models.py` triggered a deprecation warning under the installed SQLAlchemy/Python versions and was switched to `datetime.now(timezone.utc)`.

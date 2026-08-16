@@ -137,6 +137,8 @@ All 8 came back `NEEDS_REVIEW` — correctly. The statement never names a counte
 }
 ```
 
+> **Update, added later in the same session:** at the time this was captured, cross-document reconciliation (`app/services/reconciliation.py`) didn't exist yet. It was added afterward, and re-running this exact scenario today would resolve 2 of these 8 automatically: `STM-7713`'s description ("Legal fees INV-LX-441") matches the invoice record's reference with an identical amount, and `STM-7716`'s description ("Audit fee APL-Q2-2026") matches the CSV row's `invoice_number` with an identical amount — both would come back `VALID` with `counterparty_name`/`counterparty_account` backfilled instead of `NEEDS_REVIEW`. See [README → Production improvements #11](../README.md#production-improvements) and `tests/test_reconciliation.py` for the current behavior. The other 6 lines (`STM-7711`, `7712`, `7714`, `7715`, `7717`, `7718`) have no matching reference anywhere in the batch, so they correctly remain `NEEDS_REVIEW` — there's genuinely no data to reconcile them against, not a gap in the reconciliation logic. Also note `STM-7711`'s `category: OTHER` is itself a mis-extraction (should be `SUBSCRIPTION` — see [README → Known limitations](../README.md#known-limitations)); reconciliation only backfills `counterparty_name`/`counterparty_account`, it doesn't touch `category`.
+
 (`country: "LU"` was correctly inferred from the account's IBAN prefix, `LU12 0010 0012 3456 7891` — see [Assumptions](../README.md#assumptions) in the README.)
 
 ## 4. Correct, revalidate, and approve a record — full lifecycle
@@ -185,16 +187,18 @@ GET /api/batches/5a66ed04...
   "needs_review_count": 20,
   "valid_count": 19,
   "validated_count": 1,
-  "source_documents": [
+  "csv_documents": ["transactions_import.csv"],
+  "pdf_documents": [
     "bank_statement_july_2026.pdf",
     "invoice_legal_services.pdf",
-    "invoice_software_subscription.pdf",
-    "transactions_import.csv"
+    "invoice_software_subscription.pdf"
   ]
 }
 ```
 
 40 records from 4 source files in one batch (30 CSV + 10 PDF), 20 correctly flagged for review, 19 auto-passed validation, 1 manually corrected and approved end-to-end.
+
+> **Update:** `source_documents` above has since been split into `csv_documents`/`pdf_documents` (shown as captured today, not from the original run — see [README → Data model](../README.md#data-model)). Separately, per the reconciliation note under step 3, re-running this whole walkthrough today would resolve `STM-7713` and `STM-7716` automatically, shifting these counts to `needs_review_count: 18` / `valid_count: 21`.
 
 ## Adding your own screenshots
 

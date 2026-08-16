@@ -8,6 +8,7 @@ from app.schemas import BatchCreate, BatchOut, BatchSummary, RecordOut, UploadRe
 from app.services.ai_provider import AIProvider
 from app.services.csv_import import import_csv
 from app.services.pdf_extraction import get_provider, import_pdf
+from app.services.reconciliation import reconcile_batch
 from app.services.storage import delete_batch_uploads, resolve, save_pdf
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
@@ -113,6 +114,10 @@ async def upload_csv(batch_id: str, file: UploadFile, db: Session = Depends(get_
     for r in records:
         db.refresh(r)
 
+    reconcile_batch(db, batch_id)
+    for r in records:
+        db.refresh(r)
+
     return UploadResult(batch_id=batch_id, records_created=len(records), records=records)
 
 
@@ -151,6 +156,10 @@ async def upload_pdfs(
 
     db.add_all(all_records)
     db.commit()
+    for r in all_records:
+        db.refresh(r)
+
+    reconcile_batch(db, batch_id)
     for r in all_records:
         db.refresh(r)
 
