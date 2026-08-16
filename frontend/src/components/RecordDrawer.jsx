@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { EDITABLE_FIELDS } from "../constants";
+import { EDITABLE_FIELDS, STATUS_LABELS } from "../constants";
 
 function buildFormState(record) {
   const state = {};
@@ -87,6 +87,7 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
   }
 
   const showPdf = current.has_source_file;
+  const canValidate = current.status === "VALID";
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
@@ -94,7 +95,7 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
         {showPdf && (
           <div className="drawer-pdf-panel">
             <div className="drawer-pdf-header">
-              <span>Original PDF — {current.source_document_name}</span>
+              <span>Original PDF · {current.source_document_name}</span>
               <a href={api.sourceFileUrl(current.id)} target="_blank" rel="noreferrer">
                 Open in new tab ↗
               </a>
@@ -109,13 +110,14 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
 
         <div className="drawer-form-panel">
           <div className="drawer-header">
-            <h2 style={{ margin: 0 }}>
-              {current.reference || "Record"} <span className={`badge ${current.status}`}>{current.status}</span>
+            <h2>
+              {current.reference || "Record"}
+              <span className={`badge ${current.status}`}>{STATUS_LABELS[current.status] || current.status}</span>
             </h2>
-            <button className="secondary" onClick={onClose}>Close</button>
+            <button className="drawer-close" onClick={onClose}>✕</button>
           </div>
 
-          <div className="status-message" style={{ marginBottom: 10 }}>
+          <div className="drawer-meta">
             Source: {current.source_type} · {current.source_document_name}
           </div>
 
@@ -126,9 +128,9 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
           )}
 
           {generalErrors.length > 0 && (
-            <div className="panel" style={{ background: "#fff5f5", marginBottom: 16 }}>
+            <div className="general-error-banner">
               {generalErrors.map((e, i) => (
-                <div key={i} className="field-error">{e.message}</div>
+                <div key={i}>{e.message}</div>
               ))}
             </div>
           )}
@@ -137,15 +139,16 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
             {EDITABLE_FIELDS.map((f) => (
               <div
                 key={f.key}
-                className={`field-row${errorsByField[f.key] ? " has-error" : ""}`}
-                style={f.full ? { gridColumn: "1 / -1" } : undefined}
+                className={`field-row${f.full ? " full" : ""}${errorsByField[f.key] ? " has-error" : ""}`}
               >
                 <label>{f.label}</label>
                 {f.type === "select" ? (
                   <select value={form[f.key]} onChange={(e) => updateField(f.key, e.target.value)}>
                     <option value="">—</option>
                     {f.options.map((o) => (
-                      <option key={o} value={o}>{o}</option>
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
                     ))}
                   </select>
                 ) : (
@@ -161,16 +164,14 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
           </div>
 
           <div className="history-section">
-            <button
-              type="button"
-              className="history-toggle"
-              onClick={() => setHistoryOpen((v) => !v)}
-            >
+            <button type="button" className="history-toggle" onClick={() => setHistoryOpen((v) => !v)}>
               {historyOpen ? "▾" : "▸"} Edit history ({history.length})
             </button>
-            {historyOpen && (
-              history.length === 0 ? (
-                <div className="upload-file-empty">No changes recorded yet.</div>
+            {historyOpen &&
+              (history.length === 0 ? (
+                <div className="empty-note" style={{ marginTop: 10 }}>
+                  No changes recorded yet.
+                </div>
               ) : (
                 <ul className="history-list">
                   {history.map((h) => (
@@ -186,20 +187,24 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
                     </li>
                   ))}
                 </ul>
-              )
-            )}
+              ))}
           </div>
 
-          {actionError && <div className="field-error" style={{ marginTop: 10 }}>{actionError}</div>}
+          {actionError && (
+            <div className="field-error" style={{ marginTop: 10 }}>
+              {actionError}
+            </div>
+          )}
 
           <div className="drawer-actions">
-            <button onClick={handleSave} disabled={saving}>
+            <button className="btn-primary" onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Save"}
             </button>
             <button
+              className={canValidate ? "btn-validate-active" : "btn-validate-inactive"}
               onClick={handleValidate}
-              disabled={saving || current.status !== "VALID"}
-              title={current.status !== "VALID" ? "Record must be VALID (save with no errors) first" : ""}
+              disabled={saving || !canValidate}
+              title={!canValidate ? "Record must be VALID (save with no errors) first" : ""}
             >
               Validate
             </button>

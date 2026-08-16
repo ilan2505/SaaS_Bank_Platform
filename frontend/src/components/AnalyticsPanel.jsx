@@ -1,19 +1,4 @@
-import { CATEGORIES } from "../constants";
-
-// Status is a workflow pipeline (NEEDS_REVIEW -> VALID -> VALIDATED), and the
-// three colors here match the badges used everywhere else in the app
-// (RecordTable, RecordDrawer) so identity stays consistent across views.
-const STATUS_ORDER = ["NEEDS_REVIEW", "VALID", "VALIDATED"];
-const STATUS_COLORS = {
-  NEEDS_REVIEW: "#eda100",
-  VALID: "#3b5bdb",
-  VALIDATED: "#008300",
-};
-const STATUS_LABELS = {
-  NEEDS_REVIEW: "Needs review",
-  VALID: "Valid",
-  VALIDATED: "Validated",
-};
+import { CATEGORIES, STATUS_ORDER, STATUS_COLORS, STATUS_LABELS } from "../constants";
 
 const amountFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -45,46 +30,50 @@ export default function AnalyticsPanel({ records }) {
   const categoryEntries = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
   const maxCategoryValue = categoryEntries.length > 0 ? categoryEntries[0][1] : 1;
 
+  let acc = 0;
+  const segments = [];
+  for (const s of STATUS_ORDER) {
+    if (statusCounts[s] <= 0) continue;
+    const pct = (statusCounts[s] / total) * 100;
+    segments.push(`${STATUS_COLORS[s]} ${acc}% ${acc + pct}%`);
+    acc += pct;
+  }
+  const donutStyle = segments.length > 0 ? { background: `conic-gradient(${segments.join(", ")})` } : undefined;
+
   return (
-    <div className="panel">
-      <h2>Analytics</h2>
+    <div className="card">
+      <h2 className="card-label">Analytics</h2>
       <div className="analytics-grid">
         <div className="analytics-chart">
           <h3>Status breakdown</h3>
-          <div className="status-total">Total records: <strong>{total}</strong></div>
-          <div className="status-stacked-bar">
-            {STATUS_ORDER.filter((s) => statusCounts[s] > 0).map((s) => (
-              <div
-                key={s}
-                className="status-segment"
-                style={{ width: `${(statusCounts[s] / total) * 100}%`, background: STATUS_COLORS[s] }}
-                title={`${STATUS_LABELS[s]}: ${statusCounts[s]} of ${total}`}
-              />
-            ))}
-          </div>
-          <div className="status-legend">
-            {STATUS_ORDER.map((s) => (
-              <div className="status-legend-item" key={s}>
-                <span className="status-dot" style={{ background: STATUS_COLORS[s] }} />
-                {STATUS_LABELS[s]} <strong>{statusCounts[s]}</strong>
+          <div className="donut-row">
+            <div className="donut" style={donutStyle}>
+              <div className="donut-hole">
+                <div className="donut-total">{total}</div>
+                <div className="donut-total-label">RECORDS</div>
               </div>
-            ))}
+            </div>
+            <div className="status-legend">
+              {STATUS_ORDER.map((s) => (
+                <div className="status-legend-item" key={s}>
+                  <span className="status-legend-dot" style={{ background: STATUS_COLORS[s] }} />
+                  {STATUS_LABELS[s]}
+                  <span className="status-legend-count">{statusCounts[s]}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="analytics-chart">
-          <h3>Total volume by category (absolute)</h3>
+          <h3>Volume by category</h3>
           {categoryEntries.length === 0 ? (
-            <div className="upload-file-empty">No categorized amounts yet.</div>
+            <div className="empty-note">No categorized amounts yet.</div>
           ) : (
             <div className="category-bars">
               {categoryEntries.map(([category, value]) => (
-                <div
-                  className="category-bar-row"
-                  key={category}
-                  title={`${category}: ${amountFormatter.format(value)}`}
-                >
-                  <span className="category-bar-label">{category}</span>
+                <div className="category-bar-row" key={category} title={`${category}: ${amountFormatter.format(value)}`}>
+                  <span className="category-bar-label">{category.replace(/_/g, " ")}</span>
                   <div className="category-bar-track">
                     <div
                       className="category-bar-fill"

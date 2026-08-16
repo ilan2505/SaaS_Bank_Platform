@@ -17,6 +17,16 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
     setMessage("");
   }
 
+  function handleDrop(e) {
+    e.preventDefault();
+    setSelectedFiles(Array.from(e.dataTransfer.files || []));
+    setMessage("");
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+  }
+
   async function handleUpload() {
     if (selectedFiles.length === 0) return;
 
@@ -88,62 +98,47 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
   }
 
   return (
-    <>
-      <div className="panel">
-        <h2>Upload</h2>
-        <div className="upload-controls">
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".csv,.pdf"
-            multiple
-            onChange={handleFilesSelected}
-            className="visually-hidden-input"
-          />
-          <div className="upload-picker-row">
-            <button type="button" className="secondary" onClick={handleChooseFiles}>
-              Choose files
-            </button>
-            <span className="upload-picker-label">
-              {selectedFiles.length === 0
-                ? "No files selected"
-                : `${selectedFiles.length} file(s) selected`}
-            </span>
-          </div>
-          <button onClick={handleUpload} disabled={busy || selectedFiles.length === 0}>
-            {busy ? "Uploading…" : "Upload"}
-          </button>
-          {message && <div className="status-message">{message}</div>}
+    <div className="card">
+      <h2 className="card-label">Upload statements</h2>
+
+      <div className="dropzone" onDrop={handleDrop} onDragOver={handleDragOver}>
+        <div className="dropzone-text">Drag PDF or CSV files here, or</div>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".csv,.pdf"
+          multiple
+          onChange={handleFilesSelected}
+          className="visually-hidden-input"
+        />
+        <button type="button" className="btn-tinted" onClick={handleChooseFiles}>
+          Browse files
+        </button>
+        <div className="dropzone-hint">
+          {selectedFiles.length === 0 ? "No files selected" : `${selectedFiles.length} file(s) selected`}
         </div>
+        <button className="btn-primary" onClick={handleUpload} disabled={busy || selectedFiles.length === 0}>
+          {busy ? "Uploading…" : "Upload files"}
+        </button>
+        {message && <div className="dropzone-message">{message}</div>}
       </div>
 
-      <div className="panel">
-        <h2>Uploaded files</h2>
-        <div className="upload-file-lists">
-          <FileList
-            title="PDF files"
-            files={pdfDocuments}
-            deletingFile={deletingFile}
-            onDelete={handleDeleteDocument}
-          />
-          <FileList
-            title="CSV files"
-            files={csvDocuments}
-            deletingFile={deletingFile}
-            onDelete={handleDeleteDocument}
-          />
-        </div>
+      <div className="upload-file-lists">
+        <FileList title="PDF files" files={pdfDocuments} deletingFile={deletingFile} onDelete={handleDeleteDocument} />
+        <FileList title="CSV files" files={csvDocuments} deletingFile={deletingFile} onDelete={handleDeleteDocument} />
       </div>
-    </>
+    </div>
   );
 }
 
 function FileList({ title, files, deletingFile, onDelete }) {
   return (
     <div className="upload-file-list">
-      <h3>{title} <span className="upload-file-count">({files.length})</span></h3>
+      <h3>
+        {title} <span className="upload-file-count">({files.length})</span>
+      </h3>
       {files.length === 0 ? (
-        <div className="upload-file-empty">None yet</div>
+        <div className="empty-note">None yet</div>
       ) : (
         <ul>
           {files.map((name) => (

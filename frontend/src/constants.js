@@ -1,3 +1,17 @@
+export const STATUS_ORDER = ["NEEDS_REVIEW", "VALID", "VALIDATED"];
+export const STATUS_LABELS = {
+  NEEDS_REVIEW: "Needs review",
+  VALID: "Valid",
+  VALIDATED: "Validated",
+};
+// Match the design handoff's status palette exactly (badges, donut chart,
+// KPI dots, table all pull from this single source).
+export const STATUS_COLORS = {
+  NEEDS_REVIEW: "#E8A93B",
+  VALID: "#2F6FD6",
+  VALIDATED: "#1E9E4A",
+};
+
 export const CURRENCIES = ["EUR", "USD", "GBP", "CHF"];
 
 export const CATEGORIES = [

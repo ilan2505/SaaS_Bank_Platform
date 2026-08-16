@@ -4,7 +4,62 @@ import UploadPanel from "./components/UploadPanel";
 import RecordTable from "./components/RecordTable";
 import RecordDrawer from "./components/RecordDrawer";
 import AnalyticsPanel from "./components/AnalyticsPanel";
+import KpiRow from "./components/KpiRow";
 import { api } from "./api";
+
+const STATUS_FILTERS = [
+  { value: "", label: "All statuses" },
+  { value: "NEEDS_REVIEW", label: "Needs review" },
+  { value: "VALID", label: "Valid" },
+  { value: "VALIDATED", label: "Validated" },
+];
+
+const SOURCE_FILTERS = [
+  { value: "", label: "All sources" },
+  { value: "CSV", label: "CSV" },
+  { value: "PDF", label: "PDF" },
+];
+
+const EXPORT_COLUMNS = [
+  "reference",
+  "transaction_date",
+  "value_date",
+  "description",
+  "gross_amount",
+  "fee_amount",
+  "tax_amount",
+  "net_amount",
+  "currency",
+  "counterparty_name",
+  "counterparty_account",
+  "country",
+  "category",
+  "invoice_number",
+  "payment_method",
+  "source_type",
+  "source_document_name",
+  "status",
+];
+
+function escapeCsvValue(value) {
+  const s = value == null ? "" : String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv(records, batchName) {
+  if (records.length === 0) return;
+  const rows = [
+    EXPORT_COLUMNS.join(","),
+    ...records.map((r) => EXPORT_COLUMNS.map((c) => escapeCsvValue(r[c])).join(",")),
+  ];
+  const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(batchName || "records").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-export.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function App() {
   const [batches, setBatches] = useState([]);
@@ -119,13 +174,29 @@ export default function App() {
       />
       <div className="main">
         {!selectedId && (
-          <div className="empty-state">
-            Create or select a batch on the left to get started.
-          </div>
+          <div className="empty-state">Create or select a batch on the left to get started.</div>
         )}
 
         {selectedId && (
-          <>
+          <div className="page">
+            <div className="page-header">
+              <div>
+                <h1>{summary?.name ?? ""}</h1>
+                <div className="page-header-meta">
+                  {summary
+                    ? `${new Date(summary.created_at).toLocaleString()} · ${summary.total_records} records imported`
+                    : ""}
+                </div>
+              </div>
+              <button className="btn-secondary" onClick={() => exportCsv(allRecords, summary?.name)}>
+                Export CSV
+              </button>
+            </div>
+
+            <KpiRow records={allRecords} />
+
+            <AnalyticsPanel records={allRecords} />
+
             <UploadPanel
               batchId={selectedId}
               onUploaded={handleUploaded}
@@ -133,37 +204,54 @@ export default function App() {
               pdfDocuments={summary?.pdf_documents ?? []}
             />
 
-            <AnalyticsPanel records={allRecords} />
+            <div className="card">
+              <div className="card-header-row">
+                <h2 className="card-label">Transactions</h2>
+                <span className="card-header-count">
+                  {records.length} of {allRecords.length}
+                </span>
+              </div>
 
-            <div className="panel">
-              <h2>Records</h2>
               <div className="filters">
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="">All statuses</option>
-                  <option value="NEEDS_REVIEW">Needs review</option>
-                  <option value="VALID">Valid</option>
-                  <option value="VALIDATED">Validated</option>
-                </select>
-                <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-                  <option value="">All sources</option>
-                  <option value="CSV">CSV</option>
-                  <option value="PDF">PDF</option>
-                </select>
+                <div className="pill-group">
+                  {STATUS_FILTERS.map((f) => (
+                    <button
+                      key={f.value}
+                      type="button"
+                      className={statusFilter === f.value ? "active" : ""}
+                      onClick={() => setStatusFilter(f.value)}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="pill-group">
+                  {SOURCE_FILTERS.map((f) => (
+                    <button
+                      key={f.value}
+                      type="button"
+                      className={sourceFilter === f.value ? "active" : ""}
+                      onClick={() => setSourceFilter(f.value)}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
                 <select value={documentFilter} onChange={(e) => setDocumentFilter(e.target.value)}>
                   <option value="">All files</option>
                   {documentOptions.map((name) => (
-                    <option key={name} value={name}>{name}</option>
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
                   ))}
                 </select>
               </div>
 
               {loading && <div className="status-message">Loading…</div>}
               {error && <div className="field-error">{error}</div>}
-              {!loading && !error && (
-                <RecordTable records={records} onSelect={handleSelectRecord} />
-              )}
+              {!loading && !error && <RecordTable records={records} onSelect={handleSelectRecord} />}
             </div>
-          </>
+          </div>
         )}
       </div>
 
