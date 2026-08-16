@@ -126,7 +126,7 @@ software_engineer_task/
 │   └── src/
 │       ├── api.js                   Thin fetch wrapper over the backend API
 │       ├── App.jsx                  Top-level state/orchestration
-│       └── components/              Sidebar, UploadPanel, SummaryBar, AnalyticsPanel, RecordTable, RecordDrawer
+│       └── components/              Sidebar, UploadPanel, AnalyticsPanel, RecordTable, RecordDrawer
 ├── docker-compose.yml
 └── samples/                         The provided assignment files
 ```

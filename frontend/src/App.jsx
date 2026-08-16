@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar";
-import SummaryBar from "./components/SummaryBar";
 import UploadPanel from "./components/UploadPanel";
 import RecordTable from "./components/RecordTable";
 import RecordDrawer from "./components/RecordDrawer";
@@ -133,8 +132,6 @@ export default function App() {
               csvDocuments={summary?.csv_documents ?? []}
               pdfDocuments={summary?.pdf_documents ?? []}
             />
-
-            <SummaryBar summary={summary} />
 
             <AnalyticsPanel records={allRecords} />
 

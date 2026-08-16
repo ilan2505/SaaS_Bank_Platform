@@ -44,6 +44,7 @@ export default function AnalyticsPanel({ records }) {
       <div className="analytics-grid">
         <div className="analytics-chart">
           <h3>Status breakdown</h3>
+          <div className="status-total">Total records: <strong>{total}</strong></div>
           <div className="status-stacked-bar">
             {STATUS_ORDER.filter((s) => statusCounts[s] > 0).map((s) => (
               <div
