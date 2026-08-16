@@ -33,7 +33,11 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
         `This file was already uploaded to this batch: ${duplicates.join(", ")}. ` +
           "Uploading it again will create duplicate records. Upload anyway?"
       );
-      if (!proceed) return;
+      if (!proceed) {
+        fileInput.current.value = "";
+        setSelectedFiles([]);
+        return;
+      }
     }
 
     setBusy(true);
