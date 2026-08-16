@@ -89,3 +89,25 @@ def test_delete_batch_removes_it_and_its_records(client, batch_id):
 def test_delete_unknown_batch_returns_404(client):
     r = client.delete("/api/batches/does-not-exist")
     assert r.status_code == 404
+
+
+def test_filter_records_by_source_document_name(client, batch_id):
+    csv_content = (
+        "reference,transaction_date,value_date,description,gross_amount,fee_amount,"
+        "tax_amount,net_amount,currency,counterparty_name,counterparty_account,country,"
+        "category,invoice_number,payment_method\n"
+        "TX-1,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n"
+    )
+    client.post(
+        f"/api/batches/{batch_id}/upload/csv",
+        files={"file": ("first.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+    client.post(
+        f"/api/batches/{batch_id}/upload/csv",
+        files={"file": ("second.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+
+    r = client.get(f"/api/batches/{batch_id}/records", params={"source_document_name": "first.csv"})
+    records = r.json()
+    assert len(records) == 1
+    assert records[0]["source_document_name"] == "first.csv"

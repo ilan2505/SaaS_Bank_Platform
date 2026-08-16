@@ -52,6 +52,7 @@ def list_records(
     batch_id: str,
     status: str | None = None,
     source_type: str | None = None,
+    source_document_name: str | None = None,
     db: Session = Depends(get_db),
 ):
     batch = db.get(ImportBatch, batch_id)
@@ -63,6 +64,8 @@ def list_records(
         query = query.where(FinancialRecord.status == status)
     if source_type:
         query = query.where(FinancialRecord.source_type == source_type)
+    if source_document_name:
+        query = query.where(FinancialRecord.source_document_name == source_document_name)
     query = query.order_by(FinancialRecord.created_at)
 
     return db.scalars(query).all()

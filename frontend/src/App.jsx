@@ -13,6 +13,7 @@ export default function App() {
   const [records, setRecords] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [documentFilter, setDocumentFilter] = useState("");
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,7 +31,11 @@ export default function App() {
     try {
       const [s, r] = await Promise.all([
         api.getBatchSummary(batchId),
-        api.listRecords(batchId, { status: statusFilter, sourceType: sourceFilter }),
+        api.listRecords(batchId, {
+          status: statusFilter,
+          sourceType: sourceFilter,
+          sourceDocument: documentFilter,
+        }),
       ]);
       setSummary(s);
       setRecords(r);
@@ -40,7 +45,7 @@ export default function App() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, sourceFilter]);
+  }, [statusFilter, sourceFilter, documentFilter]);
 
   useEffect(() => {
     refreshBatches();
@@ -49,6 +54,20 @@ export default function App() {
   useEffect(() => {
     if (selectedId) refreshBatchDetail(selectedId);
   }, [selectedId, refreshBatchDetail]);
+
+  const documentOptions =
+    sourceFilter === "CSV"
+      ? summary?.csv_documents ?? []
+      : sourceFilter === "PDF"
+      ? summary?.pdf_documents ?? []
+      : [...(summary?.csv_documents ?? []), ...(summary?.pdf_documents ?? [])].sort();
+
+  useEffect(() => {
+    if (documentFilter && !documentOptions.includes(documentFilter)) {
+      setDocumentFilter("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceFilter, summary]);
 
   async function handleCreateBatch(name) {
     const batch = await api.createBatch(name);
@@ -124,6 +143,12 @@ export default function App() {
                   <option value="">All sources</option>
                   <option value="CSV">CSV</option>
                   <option value="PDF">PDF</option>
+                </select>
+                <select value={documentFilter} onChange={(e) => setDocumentFilter(e.target.value)}>
+                  <option value="">All files</option>
+                  {documentOptions.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
                 </select>
               </div>
 
