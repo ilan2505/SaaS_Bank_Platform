@@ -29,6 +29,9 @@ export const api = {
   getBatchSummary: (batchId) =>
     fetch(`${API_URL}/api/batches/${batchId}`).then(handle),
 
+  deleteBatch: (batchId) =>
+    fetch(`${API_URL}/api/batches/${batchId}`, { method: "DELETE" }).then(handle),
+
   listRecords: (batchId, { status, sourceType } = {}) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
@@ -73,4 +76,6 @@ export const api = {
 
   validateRecord: (recordId) =>
     fetch(`${API_URL}/api/records/${recordId}/validate`, { method: "POST" }).then(handle),
+
+  sourceFileUrl: (recordId) => `${API_URL}/api/records/${recordId}/source-file`,
 };

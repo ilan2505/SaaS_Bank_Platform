@@ -8,6 +8,7 @@ from app.schemas import BatchCreate, BatchOut, BatchSummary, RecordOut, UploadRe
 from app.services.ai_provider import AIProvider
 from app.services.csv_import import import_csv
 from app.services.pdf_extraction import get_provider, import_pdf
+from app.services.storage import delete_batch_uploads, save_pdf
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
 
@@ -25,6 +26,17 @@ def create_batch(payload: BatchCreate, db: Session = Depends(get_db)):
 def list_batches(db: Session = Depends(get_db)):
     batches = db.scalars(select(ImportBatch).order_by(ImportBatch.created_at.desc())).all()
     return [_summarize(batch) for batch in batches]
+
+
+@router.delete("/{batch_id}", status_code=204)
+def delete_batch(batch_id: str, db: Session = Depends(get_db)):
+    batch = db.get(ImportBatch, batch_id)
+    if not batch:
+        raise HTTPException(404, "Batch not found")
+
+    db.delete(batch)  # cascades to its records via the ORM relationship
+    db.commit()
+    delete_batch_uploads(batch_id)
 
 
 @router.get("/{batch_id}", response_model=BatchSummary)
@@ -100,8 +112,10 @@ async def upload_pdfs(
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(400, f"'{file.filename}' is not a PDF")
         content = await file.read()
+        stored_path = save_pdf(batch_id, file.filename, content)
         records = import_pdf(provider, content, file.filename, batch_id, existing_refs)
         for r in records:
+            r.source_document_path = stored_path
             if r.reference:
                 existing_refs.add(r.reference)
         all_records.extend(records)

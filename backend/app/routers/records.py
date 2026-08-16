@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import FinancialRecord, RecordStatus
 from app.schemas import RecordOut, RecordUpdate, ValidationError
+from app.services.storage import resolve
 from app.services.validation import (
     check_business_rules,
     determine_status,
@@ -43,6 +45,27 @@ def get_record(record_id: str, db: Session = Depends(get_db)):
 def get_record_errors(record_id: str, db: Session = Depends(get_db)):
     record = _get_record_or_404(record_id, db)
     return record.validation_errors
+
+
+@router.get("/{record_id}/source-file")
+def get_record_source_file(record_id: str, db: Session = Depends(get_db)):
+    """Serves the original uploaded PDF so the review UI can show it next to
+    the extracted fields. 404 if this record has no stored source (CSV rows,
+    or PDFs uploaded before this feature existed)."""
+    record = _get_record_or_404(record_id, db)
+    if not record.source_document_path:
+        raise HTTPException(404, "No stored source file for this record")
+
+    path = resolve(record.source_document_path)
+    if not path.exists():
+        raise HTTPException(404, "Source file no longer available on disk")
+
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=record.source_document_name,
+        content_disposition_type="inline",
+    )
 
 
 @router.patch("/{record_id}", response_model=RecordOut)

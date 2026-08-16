@@ -59,6 +59,7 @@ class RecordOut(BaseModel):
 
     source_type: str
     source_document_name: str
+    has_source_file: bool = False
     extraction_confidence: Decimal | None = None
 
     status: str

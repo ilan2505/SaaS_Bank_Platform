@@ -30,7 +30,8 @@ body {
 }
 
 .batch-item {
-  padding: 10px 12px;
+  position: relative;
+  padding: 10px 32px 10px 12px;
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 4px;
@@ -46,9 +47,34 @@ body {
   color: #fff;
 }
 
+.batch-item .batch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .batch-item .batch-date {
   font-size: 11px;
   opacity: 0.6;
+}
+
+.batch-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 5px;
+  background: transparent;
+  color: #9aa0aa;
+  font-size: 15px;
+}
+
+.batch-delete:hover {
+  background: #e03131;
+  color: #fff;
 }
 
 .new-batch-form {
@@ -65,6 +91,41 @@ body {
   background: #2a2e37;
   color: #fff;
   font-size: 13px;
+}
+
+.batch-controls {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-search {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #2a2e37;
+  color: #fff;
+  font-size: 13px;
+  width: 100%;
+}
+
+.sort-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.sort-toggle button {
+  flex: 1;
+  background: #2a2e37;
+  color: #9aa0aa;
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+.sort-toggle button.active {
+  background: #3b5bdb;
+  color: #fff;
 }
 
 .main {
@@ -244,9 +305,58 @@ tr.record-row:hover {
   max-width: 100%;
   background: #fff;
   height: 100%;
+  display: flex;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+}
+
+.drawer.with-pdf {
+  width: min(1200px, 95vw);
+}
+
+.drawer-form-panel {
+  flex: 1 1 480px;
+  min-width: 0;
+  height: 100%;
   overflow-y: auto;
   padding: 24px;
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+}
+
+.drawer.with-pdf .drawer-form-panel {
+  flex: 1 1 45%;
+  min-width: 380px;
+}
+
+.drawer-pdf-panel {
+  flex: 1 1 55%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f7f8fa;
+  border-right: 1px solid #e5e7eb;
+}
+
+.drawer-pdf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  font-size: 12px;
+  color: #555;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.drawer-pdf-header a {
+  color: #3b5bdb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.drawer-pdf-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
 }
 
 .drawer-header {

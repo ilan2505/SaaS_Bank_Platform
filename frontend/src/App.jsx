@@ -56,6 +56,17 @@ export default function App() {
     setSelectedId(batch.id);
   }
 
+  async function handleDeleteBatch(batchId) {
+    await api.deleteBatch(batchId);
+    await refreshBatches();
+    if (selectedId === batchId) {
+      setSelectedId(null);
+      setSummary(null);
+      setRecords([]);
+      setSelectedRecord(null);
+    }
+  }
+
   async function handleUploaded() {
     await refreshBatches();
     await refreshBatchDetail(selectedId);
@@ -81,6 +92,7 @@ export default function App() {
         selectedId={selectedId}
         onSelect={setSelectedId}
         onCreate={handleCreateBatch}
+        onDelete={handleDeleteBatch}
       />
       <div className="main">
         {!selectedId && (

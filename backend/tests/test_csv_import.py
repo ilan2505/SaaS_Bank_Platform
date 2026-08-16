@@ -68,3 +68,23 @@ def test_batch_summary_endpoint(client, batch_id):
     assert data["id"] == batch_id
     assert data["total_records"] == 0
     assert data["needs_review_count"] == 0
+
+
+def test_delete_batch_removes_it_and_its_records(client, batch_id):
+    with open(SAMPLES_DIR / "transactions_import.csv", "rb") as f:
+        client.post(
+            f"/api/batches/{batch_id}/upload/csv",
+            files={"file": ("transactions_import.csv", f, "text/csv")},
+        )
+
+    r = client.delete(f"/api/batches/{batch_id}")
+    assert r.status_code == 204
+
+    assert client.get(f"/api/batches/{batch_id}").status_code == 404
+    assert client.get(f"/api/batches/{batch_id}/records").status_code == 404
+    assert batch_id not in {b["id"] for b in client.get("/api/batches").json()}
+
+
+def test_delete_unknown_batch_returns_404(client):
+    r = client.delete("/api/batches/does-not-exist")
+    assert r.status_code == 404

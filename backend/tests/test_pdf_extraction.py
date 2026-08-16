@@ -151,3 +151,35 @@ def test_duplicate_reference_across_pdf_records_is_flagged(client, batch_id):
     assert records[0]["status"] == "VALID"
     assert records[1]["status"] == "NEEDS_REVIEW"
     assert any(e["field"] == "reference" for e in records[1]["validation_errors"])
+
+
+def test_original_pdf_is_stored_and_servable(client, batch_id):
+    provider = FakeProvider(ExtractionResult(records=[]))
+    r = _upload_with_provider(client, batch_id, provider, filename="statement.pdf")
+    record = r.json()["records"][0]
+    assert record["has_source_file"] is True
+
+    r = client.get(f"/api/records/{record['id']}/source-file")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content == b"%PDF-1.4 fake"
+
+
+def test_csv_record_has_no_source_file(client, batch_id):
+    import io as _io
+
+    csv_content = (
+        "reference,transaction_date,value_date,description,gross_amount,fee_amount,"
+        "tax_amount,net_amount,currency,counterparty_name,counterparty_account,country,"
+        "category,invoice_number,payment_method\n"
+        "TX-1,2026-07-01,,Row,100.00,0.00,0.00,100.00,EUR,ACME,,LU,OTHER,,BANK_TRANSFER\n"
+    )
+    r = client.post(
+        f"/api/batches/{batch_id}/upload/csv",
+        files={"file": ("data.csv", _io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+    record = r.json()["records"][0]
+    assert record["has_source_file"] is False
+
+    r = client.get(f"/api/records/{record['id']}/source-file")
+    assert r.status_code == 404

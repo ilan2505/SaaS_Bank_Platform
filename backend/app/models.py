@@ -93,6 +93,10 @@ class FinancialRecord(Base):
 
     source_type: Mapped[str] = mapped_column(SAEnum(SourceType), nullable=False)
     source_document_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Path (relative to backend/) to the stored original PDF, so the review UI
+    # can show the source document next to the extracted fields. Only set for
+    # PDF-sourced records; CSV rows have no separate "document" to display.
+    source_document_path: Mapped[str | None] = mapped_column(String, nullable=True)
     extraction_confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
 
     status: Mapped[str] = mapped_column(
@@ -111,3 +115,7 @@ class FinancialRecord(Base):
     )
 
     batch: Mapped["ImportBatch"] = relationship(back_populates="records")
+
+    @property
+    def has_source_file(self) -> bool:
+        return self.source_document_path is not None
