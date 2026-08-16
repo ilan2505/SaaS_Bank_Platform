@@ -42,10 +42,10 @@ export default function Sidebar({ batches, selectedId, onSelect, onCreate, onDel
   return (
     <div className="sidebar">
       <div className="sidebar-brand">
-        <div className="sidebar-logo">M</div>
+        <div className="sidebar-logo">S</div>
         <div>
-          <div className="sidebar-brand-name">Meridian</div>
-          <div className="sidebar-brand-sub">Reconciliation console</div>
+          <div className="sidebar-brand-name">SaaS Bank Platform</div>
+          <div className="sidebar-brand-sub">Financial records import</div>
         </div>
       </div>
 
