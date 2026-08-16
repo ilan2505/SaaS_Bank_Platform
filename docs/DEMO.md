@@ -202,7 +202,7 @@ GET /api/batches/5a66ed04...
 
 ## Adding your own screenshots
 
-The frontend workflow this documents (create batch → upload → filter to "Needs review" → click a row → see the exact invalid field highlighted → correct it → "Re-run validation" → "Validate") is easy to reproduce and screenshot yourself:
+The frontend workflow this documents (create batch → upload → filter to "Needs review" → click a row → see the exact invalid field highlighted → correct it → "Save" → "Validate") is easy to reproduce and screenshot yourself:
 
 ```bash
 # terminal 1

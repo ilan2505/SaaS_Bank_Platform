@@ -41,24 +41,10 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
     try {
       const patch = {};
       for (const f of EDITABLE_FIELDS) patch[f.key] = form[f.key];
-      const updated = await api.editRecord(current.id, patch);
-      setCurrent(updated);
-      setForm(buildFormState(updated));
-      onChanged();
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleRevalidate() {
-    setSaving(true);
-    setActionError("");
-    try {
-      const updated = await api.revalidateRecord(current.id);
-      setCurrent(updated);
-      setForm(buildFormState(updated));
+      await api.editRecord(current.id, patch);
+      const revalidated = await api.revalidateRecord(current.id);
+      setCurrent(revalidated);
+      setForm(buildFormState(revalidated));
       onChanged();
     } catch (err) {
       setActionError(err.message);
@@ -160,15 +146,12 @@ export default function RecordDrawer({ record, onClose, onChanged }) {
 
           <div className="drawer-actions">
             <button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save corrections"}
-            </button>
-            <button className="secondary" onClick={handleRevalidate} disabled={saving}>
-              Re-run validation
+              {saving ? "Saving…" : "Save"}
             </button>
             <button
               onClick={handleValidate}
               disabled={saving || current.status !== "VALID"}
-              title={current.status !== "VALID" ? "Record must be VALID (re-run validation with no errors) first" : ""}
+              title={current.status !== "VALID" ? "Record must be VALID (save with no errors) first" : ""}
             >
               Validate
             </button>
