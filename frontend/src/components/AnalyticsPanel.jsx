@@ -1,3 +1,5 @@
+import { CATEGORIES } from "../constants";
+
 // Status is a workflow pipeline (NEEDS_REVIEW -> VALID -> VALIDATED), and the
 // three colors here match the badges used everywhere else in the app
 // (RecordTable, RecordDrawer) so identity stays consistent across views.
@@ -29,9 +31,14 @@ export default function AnalyticsPanel({ records }) {
   // signed cash flow) for the same real-world payment, so the sign alone
   // doesn't reliably mean "expense" vs "income" here. This chart claims only
   // "volume," not "spend."
+  //
+  // Only the 15 supported categories are charted — a record with an invalid
+  // category (e.g. "UNKNOWN_CATEGORY") is exactly why that record is
+  // NEEDS_REVIEW in the first place, so it doesn't belong next to real
+  // business categories here; it's still fully visible in the records table.
   const categoryTotals = {};
   for (const r of records) {
-    if (r.net_amount == null || !r.category) continue;
+    if (r.net_amount == null || !CATEGORIES.includes(r.category)) continue;
     const amount = Math.abs(Number(r.net_amount));
     categoryTotals[r.category] = (categoryTotals[r.category] || 0) + amount;
   }
