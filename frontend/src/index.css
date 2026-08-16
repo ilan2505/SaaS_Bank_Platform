@@ -280,13 +280,37 @@ button.danger {
 }
 
 .upload-file-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 13px;
-  padding: 5px 9px;
+  padding: 5px 6px 5px 9px;
   background: #f4f5f8;
   border-radius: 6px;
+}
+
+.upload-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.upload-file-delete {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 5px;
+  background: transparent;
+  color: #999;
+  font-size: 15px;
+}
+
+.upload-file-delete:hover {
+  background: #e03131;
+  color: #fff;
 }
 
 .filters {

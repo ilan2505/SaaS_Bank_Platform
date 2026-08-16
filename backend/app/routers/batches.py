@@ -8,7 +8,7 @@ from app.schemas import BatchCreate, BatchOut, BatchSummary, RecordOut, UploadRe
 from app.services.ai_provider import AIProvider
 from app.services.csv_import import import_csv
 from app.services.pdf_extraction import get_provider, import_pdf
-from app.services.storage import delete_batch_uploads, save_pdf
+from app.services.storage import delete_batch_uploads, resolve, save_pdf
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
 
@@ -37,6 +37,32 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
     db.delete(batch)  # cascades to its records via the ORM relationship
     db.commit()
     delete_batch_uploads(batch_id)
+
+
+@router.delete("/{batch_id}/documents", status_code=204)
+def delete_document(batch_id: str, filename: str, db: Session = Depends(get_db)):
+    """Deletes every record in this batch that came from `filename`, and the
+    stored PDF file itself if there was one."""
+    batch = db.get(ImportBatch, batch_id)
+    if not batch:
+        raise HTTPException(404, "Batch not found")
+
+    records = db.scalars(
+        select(FinancialRecord).where(
+            FinancialRecord.batch_id == batch_id,
+            FinancialRecord.source_document_name == filename,
+        )
+    ).all()
+    if not records:
+        raise HTTPException(404, "No records found for this document in this batch")
+
+    stored_paths = {r.source_document_path for r in records if r.source_document_path}
+    for record in records:
+        db.delete(record)
+    db.commit()
+
+    for path in stored_paths:
+        resolve(path).unlink(missing_ok=True)
 
 
 @router.get("/{batch_id}", response_model=BatchSummary)

@@ -165,6 +165,18 @@ def test_original_pdf_is_stored_and_servable(client, batch_id):
     assert r.content == b"%PDF-1.4 fake"
 
 
+def test_deleting_document_removes_its_records_and_stored_pdf(client, batch_id):
+    provider = FakeProvider(ExtractionResult(records=[]))
+    r = _upload_with_provider(client, batch_id, provider, filename="to_delete.pdf")
+    record_id = r.json()["records"][0]["id"]
+
+    r = client.delete(f"/api/batches/{batch_id}/documents", params={"filename": "to_delete.pdf"})
+    assert r.status_code == 204
+
+    assert client.get(f"/api/records/{record_id}").status_code == 404
+    assert client.get(f"/api/batches/{batch_id}/records").json() == []
+
+
 def test_csv_record_has_no_source_file(client, batch_id):
     import io as _io
 

@@ -32,6 +32,12 @@ export const api = {
   deleteBatch: (batchId) =>
     fetch(`${API_URL}/api/batches/${batchId}`, { method: "DELETE" }).then(handle),
 
+  deleteDocument: (batchId, filename) =>
+    fetch(
+      `${API_URL}/api/batches/${batchId}/documents?${new URLSearchParams({ filename })}`,
+      { method: "DELETE" }
+    ).then(handle),
+
   listRecords: (batchId, { status, sourceType, sourceDocument } = {}) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);

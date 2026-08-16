@@ -6,6 +6,7 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [deletingFile, setDeletingFile] = useState(null);
 
   function handleChooseFiles() {
     fileInput.current.click();
@@ -71,6 +72,21 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
     }
   }
 
+  async function handleDeleteDocument(filename) {
+    if (!window.confirm(`Delete "${filename}" and all its records from this batch? This cannot be undone.`)) {
+      return;
+    }
+    setDeletingFile(filename);
+    try {
+      await api.deleteDocument(batchId, filename);
+      onUploaded();
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+    } finally {
+      setDeletingFile(null);
+    }
+  }
+
   return (
     <>
       <div className="panel">
@@ -104,15 +120,25 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
       <div className="panel">
         <h2>Uploaded files</h2>
         <div className="upload-file-lists">
-          <FileList title="PDF files" files={pdfDocuments} />
-          <FileList title="CSV files" files={csvDocuments} />
+          <FileList
+            title="PDF files"
+            files={pdfDocuments}
+            deletingFile={deletingFile}
+            onDelete={handleDeleteDocument}
+          />
+          <FileList
+            title="CSV files"
+            files={csvDocuments}
+            deletingFile={deletingFile}
+            onDelete={handleDeleteDocument}
+          />
         </div>
       </div>
     </>
   );
 }
 
-function FileList({ title, files }) {
+function FileList({ title, files, deletingFile, onDelete }) {
   return (
     <div className="upload-file-list">
       <h3>{title} <span className="upload-file-count">({files.length})</span></h3>
@@ -121,7 +147,18 @@ function FileList({ title, files }) {
       ) : (
         <ul>
           {files.map((name) => (
-            <li key={name} title={name}>{name}</li>
+            <li key={name} title={name}>
+              <span className="upload-file-name">{name}</span>
+              <button
+                type="button"
+                className="upload-file-delete"
+                title={`Delete ${name}`}
+                onClick={() => onDelete(name)}
+                disabled={deletingFile === name}
+              >
+                {deletingFile === name ? "…" : "×"}
+              </button>
+            </li>
           ))}
         </ul>
       )}
