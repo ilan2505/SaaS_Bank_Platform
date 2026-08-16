@@ -70,7 +70,7 @@ cd backend
 ./.venv/Scripts/python.exe -m pytest -v
 ```
 
-36 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
+38 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
 
 ## Environment variables
 
@@ -197,14 +197,14 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **Reference uniqueness is scoped to the import batch**, matching "unique business reference within an import" in the data dictionary — not global across all batches ever imported.
 - **Duplicate references: first occurrence wins.** When the same reference appears twice in one CSV/batch, the first row is left alone (it may well be valid) and the *second* (and any later) occurrence is flagged with a `reference` error. This matches how the sample CSV's `TX-2026-0003` duplicate is clearly meant to be caught.
 - **Editing a record does not auto-revalidate.** The assignment lists "correct" (step 6) and "re-run validation" (step 7) as distinct actions, so `PATCH /records/{id}` only updates fields and forces status back to `NEEDS_REVIEW`; the (possibly now-stale) validation errors from before the edit are left on screen until the user explicitly clicks "Re-run validation". This was a deliberate reading of the two-step workflow rather than an oversight — happy to discuss the alternative (auto-revalidate on save) in the interview.
-- **`country` is validated as a two-letter format** (`^[A-Z]{2}$`), not against a hardcoded ISO-3166 country list. The data dictionary asks for "ISO alpha-2" format; a full authoritative list felt like scope creep for a validation rule, but it's a one-line change (`country in ISO_COUNTRIES`) if a strict list is wanted.
+- **`country` is validated against the real ISO 3166-1 alpha-2 list** (`app/iso_countries.py`, all 249 officially assigned codes), not just a two-letter format — `"ZZ"` or `"XX"` are rejected even though they have the right shape, only actually-assigned codes like `"LU"` or `"GB"` pass.
 - **Bank statement PDFs: `country` is inferred from the account's IBAN prefix** (all lines share the account's country, here `LU`), since the statement has no per-line country. `counterparty_name` is *not* guessed this way — it's left null when the statement text doesn't name one, which is what correctly drives those rows to `NEEDS_REVIEW` (see table above) rather than silently fabricating a counterparty.
 - **CSV numeric parsing does not "fix" malformed input** (e.g. `"1,200.00"` is left as a parse error, not auto-stripped of its thousands separator), because the sample CSV clearly places that row alongside other *intentionally* invalid rows to test error handling, not locale-aware number parsing.
 - **`fee_amount`/`tax_amount` default to 0** only when the source field is genuinely blank; if present but invalid (e.g. non-numeric), it's treated as a parse error, not silently defaulted.
 
 ## Completed / incomplete features
 
-**Completed:** all 9 workflow steps and all 9 required API endpoints from the assignment, plus batch and per-document delete endpoints and a source-document filter; CSV import (never rejects the whole file); real Anthropic PDF extraction for both invoice types and the multi-line bank statement; full server-side validation shared across both import paths; edit → revalidate → validate lifecycle with the 409 guard; batch summary; frontend covering upload, filtering (status + source + source filename), field-level error display, correction, and the record detail drawer — which for PDF-sourced records also renders the original PDF side-by-side with the extracted fields, so a reviewer can check the extraction against the source document without leaving the page; batch management (delete with confirmation, search-by-name, sort by date/name) for working with many batches at once; per-document deletion (remove one uploaded file and all the records it produced, without deleting the whole batch) with a duplicate-filename warning on re-upload; 36 passing tests; Dockerfiles + docker-compose.
+**Completed:** all 9 workflow steps and all 9 required API endpoints from the assignment, plus batch and per-document delete endpoints and a source-document filter; CSV import (never rejects the whole file); real Anthropic PDF extraction for both invoice types and the multi-line bank statement; full server-side validation shared across both import paths; edit → revalidate → validate lifecycle with the 409 guard; batch summary; frontend covering upload, filtering (status + source + source filename), field-level error display, correction, and the record detail drawer — which for PDF-sourced records also renders the original PDF side-by-side with the extracted fields, so a reviewer can check the extraction against the source document without leaving the page; batch management (delete with confirmation, search-by-name, sort by date/name) for working with many batches at once; per-document deletion (remove one uploaded file and all the records it produced, without deleting the whole batch) with a duplicate-filename warning on re-upload; 38 passing tests; Dockerfiles + docker-compose.
 
 **Not implemented** (all listed as optional bonus items in the assignment): authentication, pagination, background job processing (extraction is synchronous), idempotent import / duplicate-document detection, audit history for edits, multi-tenant isolation, provider fallback, cost/token usage tracking, field-level confidence display (only a record-level confidence is shown).
 
@@ -215,8 +215,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **No retry on transient AI provider failures** — a timeout produces a NEEDS_REVIEW placeholder immediately rather than retrying with backoff.
 - **No authentication/authorization** — anyone with network access to the API can read/write any batch.
 - **SQLite file-based concurrency** — fine for a single dev instance; concurrent writers would need Postgres (already supported by swapping `DATABASE_URL`, see above).
-- **`country` format-only validation** — accepts any syntactically valid two-letter code, not just real ISO-3166 codes (see Assumptions).
-- **Re-upload doesn't detect duplicate files** — uploading the same CSV or PDF twice into the same batch creates duplicate records (caught only if `reference` collides).
+- **Re-upload duplicate detection is by filename, client-side only.** The frontend warns before re-uploading a filename already present in the batch, but this is a UX nudge, not a server-side guarantee: the API itself will happily accept the same file (or the same content under a different filename) twice, and each upload's rows are independently validated (only an identical `reference` would be caught as a genuine duplicate).
 
 ## Production improvements
 
@@ -236,9 +235,9 @@ Roughly in priority order if this were going to production:
 
 ## Tests
 
-`backend/tests/`, 36 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
+`backend/tests/`, 38 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
 
-- `test_validation.py` — unit tests directly against the shared validation engine: valid row, invalid date, unsupported currency, inconsistent net_amount (and within-tolerance acceptance), zero/negative amounts, missing required field, duplicate reference, invalid category/country, malformed (comma) amount, status transitions including low-confidence PDF forcing review.
+- `test_validation.py` — unit tests directly against the shared validation engine: valid row, invalid date, unsupported currency, inconsistent net_amount (and within-tolerance acceptance), zero/negative amounts, missing required field, duplicate reference, invalid category/country, a syntactically-valid-but-unassigned country code (`"ZZ"`) correctly rejected against the real ISO 3166-1 list, malformed (comma) amount, status transitions including low-confidence PDF forcing review.
 - `test_csv_import.py` — the full provided sample CSV (asserts exactly 30 rows imported, 13 NEEDS_REVIEW / 17 VALID, matching the intentionally-invalid rows), source filename/batch association, a file that mixes one valid and one invalid row (whole file not rejected), batch summary endpoint.
 - `test_correction_flow.py` — validate rejected (409) while NEEDS_REVIEW, full correct → revalidate → VALID → validate → VALIDATED cycle, revalidation that's still invalid, the record-errors endpoint.
 - `test_pdf_extraction.py` — provider error/timeout doesn't crash (produces a NEEDS_REVIEW placeholder), invalid structured response handled gracefully, missing required field → NEEDS_REVIEW, low confidence forces NEEDS_REVIEW even with complete fields, a bank-statement-shaped response produces multiple records, duplicate reference across PDF-extracted records is flagged, original PDF is stored and servable via the source-file endpoint, CSV records correctly report no source file, deleting a document removes its records and its stored PDF.
@@ -258,7 +257,7 @@ Provided in `samples/`: `transactions_import.csv`, `invoice_legal_services.pdf`,
 - Every backend service module was exercised against the real sample data before moving on — the CSV importer was run against the actual `transactions_import.csv` and its output checked row-by-row against the 13 intentionally-invalid rows (`test_csv_import.py::test_full_sample_csv_import` pins this: 30 imported / 13 NEEDS_REVIEW / 17 VALID).
 - The AI provider integration was **run for real** against Anthropic's API with all three sample PDFs (not just unit-tested against a fake) — see the results table above, captured directly from that run.
 - The full frontend workflow (create batch → upload CSV → filter to NEEDS_REVIEW → open a record → see the exact invalid field highlighted with its message → correct it → re-run validation → see it become VALID → validate → see it become VALIDATED) was driven end-to-end in a real browser against the running backend, screenshotted at each step, not just assumed to work from the code.
-- The full `pytest` suite (36 tests) passes locally.
+- The full `pytest` suite (38 tests) passes locally.
 
 **Parts that needed correction/redesign during the session:**
 - The initial `datetime.utcnow()` usage in `models.py` triggered a deprecation warning under the installed SQLAlchemy/Python versions and was switched to `datetime.now(timezone.utc)`.

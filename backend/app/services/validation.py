@@ -8,11 +8,11 @@ importer, and the "edit + re-run validation" endpoint so that all three
 paths enforce exactly the same rules.
 """
 
-import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.iso_countries import ISO_3166_1_ALPHA_2
 from app.models import Category, Currency, PaymentMethod
 
 REQUIRED_FIELDS = [
@@ -44,7 +44,6 @@ STRING_FIELDS = {
 ALL_FIELDS = DECIMAL_FIELDS | DATE_FIELDS | STRING_FIELDS
 
 AMOUNT_TOLERANCE = Decimal("0.01")
-COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
 
 
 def _is_blank(value: Any) -> bool:
@@ -145,7 +144,7 @@ def check_business_rules(
         errors.append({"field": "currency", "message": f"'{currency}' is not a supported currency"})
 
     country = typed.get("country")
-    if country is not None and not COUNTRY_RE.match(country.upper()):
+    if country is not None and country.upper() not in ISO_3166_1_ALPHA_2:
         errors.append({"field": "country", "message": f"'{country}' is not a valid ISO alpha-2 country code"})
 
     category = typed.get("category")

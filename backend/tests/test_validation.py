@@ -95,6 +95,22 @@ def test_invalid_country_is_reported():
     assert any(e["field"] == "country" for e in errors)
 
 
+def test_country_must_be_a_real_iso_code_not_just_two_letters():
+    """'ZZ' has the right shape (two uppercase letters) but isn't an
+    assigned ISO 3166-1 alpha-2 code, so it must still be rejected."""
+    row = {**VALID_ROW, "country": "ZZ"}
+    typed, raw_kept, parse_errors = parse_record_fields(row)
+    errors = check_business_rules(typed, parse_errors, other_references=set())
+    assert any(e["field"] == "country" for e in errors)
+
+
+def test_real_country_code_is_accepted_case_insensitively():
+    row = {**VALID_ROW, "country": "lu"}
+    typed, raw_kept, parse_errors = parse_record_fields(row)
+    errors = check_business_rules(typed, parse_errors, other_references=set())
+    assert not any(e["field"] == "country" for e in errors)
+
+
 def test_malformed_amount_is_reported():
     row = {**VALID_ROW, "gross_amount": "1,200.00"}
     typed, raw_kept, parse_errors = parse_record_fields(row)
