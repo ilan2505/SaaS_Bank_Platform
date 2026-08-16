@@ -3,16 +3,38 @@ import { api } from "../api";
 
 export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pdfDocuments = [] }) {
   const fileInput = useRef(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
-  async function handleUpload() {
-    const files = Array.from(fileInput.current.files || []);
-    if (files.length === 0) return;
+  function handleChooseFiles() {
+    fileInput.current.click();
+  }
 
-    const csvFiles = files.filter((f) => f.name.toLowerCase().endsWith(".csv"));
-    const pdfFiles = files.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-    const unsupported = files.length - csvFiles.length - pdfFiles.length;
+  function handleFilesSelected(e) {
+    setSelectedFiles(Array.from(e.target.files || []));
+    setMessage("");
+  }
+
+  async function handleUpload() {
+    if (selectedFiles.length === 0) return;
+
+    const csvFiles = selectedFiles.filter((f) => f.name.toLowerCase().endsWith(".csv"));
+    const pdfFiles = selectedFiles.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    const unsupported = selectedFiles.length - csvFiles.length - pdfFiles.length;
+
+    const duplicates = [
+      ...csvFiles.filter((f) => csvDocuments.includes(f.name)),
+      ...pdfFiles.filter((f) => pdfDocuments.includes(f.name)),
+    ].map((f) => f.name);
+
+    if (duplicates.length > 0) {
+      const proceed = window.confirm(
+        `This file was already uploaded to this batch: ${duplicates.join(", ")}. ` +
+          "Uploading it again will create duplicate records. Upload anyway?"
+      );
+      if (!proceed) return;
+    }
 
     setBusy(true);
     setMessage("");
@@ -36,6 +58,7 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
       setMessage(parts.join(" · ") || "Nothing to upload");
 
       fileInput.current.value = "";
+      setSelectedFiles([]);
       onUploaded();
     } catch (err) {
       setMessage(`Error: ${err.message}`);
@@ -45,23 +68,43 @@ export default function UploadPanel({ batchId, onUploaded, csvDocuments = [], pd
   }
 
   return (
-    <div className="panel">
-      <h2>Upload</h2>
-      <div className="upload-layout">
+    <>
+      <div className="panel">
+        <h2>Upload</h2>
         <div className="upload-controls">
-          <input ref={fileInput} type="file" accept=".csv,.pdf" multiple />
-          <button onClick={handleUpload} disabled={busy}>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".csv,.pdf"
+            multiple
+            onChange={handleFilesSelected}
+            className="visually-hidden-input"
+          />
+          <div className="upload-picker-row">
+            <button type="button" className="secondary" onClick={handleChooseFiles}>
+              Choose files
+            </button>
+            <span className="upload-picker-label">
+              {selectedFiles.length === 0
+                ? "No files selected"
+                : `${selectedFiles.length} file(s) selected`}
+            </span>
+          </div>
+          <button onClick={handleUpload} disabled={busy || selectedFiles.length === 0}>
             {busy ? "Uploading…" : "Upload"}
           </button>
           {message && <div className="status-message">{message}</div>}
         </div>
+      </div>
 
+      <div className="panel">
+        <h2>Uploaded files</h2>
         <div className="upload-file-lists">
           <FileList title="PDF files" files={pdfDocuments} />
           <FileList title="CSV files" files={csvDocuments} />
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
