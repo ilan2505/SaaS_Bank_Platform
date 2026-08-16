@@ -13,6 +13,7 @@ A small application that imports, extracts, validates, corrects and approves fin
 ## Table of contents
 
 - [Demo walkthrough](docs/DEMO.md)
+- [Screenshots](#screenshots)
 - [Setup and run](#setup-and-run)
 - [Environment variables](#environment-variables)
 - [Architecture and technical choices](#architecture-and-technical-choices)
@@ -27,6 +28,20 @@ A small application that imports, extracts, validates, corrects and approves fin
 - [Tests](#tests)
 - [Sample files](#sample-files)
 - [AI tools used](#ai-tools-used)
+
+## Screenshots
+
+**Dashboard — KPI summary, status/category analytics, upload panel**
+![Dashboard overview](docs/screenshots/01-dashboard-overview.png)
+
+**Transactions table — filtered to PDF-sourced records that need review**
+![Transactions table, filtered](docs/screenshots/02-transactions-filtered.png)
+
+**Record drawer, PDF source — extracted fields shown next to the original document**
+![Record drawer with PDF preview](docs/screenshots/03-record-drawer-pdf.png)
+
+**Record drawer, CSV source — inline validation errors on a record before correction**
+![Record drawer with validation errors](docs/screenshots/04-record-drawer-csv-errors.png)
 
 ## Setup and run
 
