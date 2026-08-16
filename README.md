@@ -6,8 +6,11 @@ A small application that imports, extracts, validates, corrects and approves fin
 - **Frontend:** React (Vite)
 - **AI provider:** Anthropic Claude (native PDF understanding + tool-use for structured extraction)
 
+**→ See [`docs/DEMO.md`](docs/DEMO.md) for a full real end-to-end run** (real Anthropic API calls, real validation output) captured from live API responses — CSV import, PDF extraction on all 3 sample documents, and a full correct → revalidate → validate cycle.
+
 ## Table of contents
 
+- [Demo walkthrough](docs/DEMO.md)
 - [Setup and run](#setup-and-run)
 - [Environment variables](#environment-variables)
 - [Architecture and technical choices](#architecture-and-technical-choices)
