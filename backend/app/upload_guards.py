@@ -6,14 +6,15 @@ weak — the checks here also look at the actual bytes, not just the name.
 
 from fastapi import HTTPException
 
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+from app.config import settings
+
 PDF_MAGIC = b"%PDF-"
 
 
 def check_upload_size(content: bytes, filename: str) -> None:
-    if len(content) > MAX_UPLOAD_BYTES:
-        limit_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
-        raise HTTPException(413, f"'{filename}' exceeds the {limit_mb}MB upload limit")
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(413, f"'{filename}' exceeds the {settings.max_upload_mb}MB upload limit")
 
 
 def check_pdf_signature(content: bytes, filename: str) -> None:

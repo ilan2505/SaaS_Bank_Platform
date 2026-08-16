@@ -73,7 +73,7 @@ cd backend
 ./.venv/Scripts/python.exe -m pytest -v
 ```
 
-49 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
+50 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
 
 ## Environment variables
 
@@ -86,6 +86,7 @@ cd backend
 | `ANTHROPIC_API_KEY` | *(none)* | Required for real PDF extraction. Never commit this. |
 | `ANTHROPIC_MODEL` | `claude-sonnet-4-5-20250929` | Model used for extraction. |
 | `EXTRACTION_CONFIDENCE_THRESHOLD` | `0.75` | PDF records with AI-reported confidence below this are forced to `NEEDS_REVIEW` even if all required fields parsed successfully. |
+| `MAX_UPLOAD_MB` | `20` | Per-file upload size limit (CSV or PDF), enforced before the file is processed or sent to the AI provider. Raise this if you expect large scanned/image-based bank statement PDFs. |
 
 **`frontend/.env`** (see `frontend/.env.example`)
 
@@ -211,7 +212,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 
 ## Completed / incomplete features
 
-**Completed:** all 9 workflow steps and all 9 required API endpoints from the assignment, plus batch and per-document delete endpoints and a source-document filter; CSV import (never rejects the whole file); real Anthropic PDF extraction for both invoice types and the multi-line bank statement; full server-side validation shared across both import paths; edit → revalidate → validate lifecycle with the 409 guard; batch summary; frontend covering upload, filtering (status + source + source filename), field-level error display, correction, and the record detail drawer — which for PDF-sourced records also renders the original PDF side-by-side with the extracted fields, so a reviewer can check the extraction against the source document without leaving the page; batch management (delete with confirmation, search-by-name, sort by date/name) for working with many batches at once; per-document deletion (remove one uploaded file and all the records it produced, without deleting the whole batch) with a duplicate-filename warning on re-upload; cross-document reconciliation (a record missing `counterparty_name` whose description references another same-batch record's reference/invoice_number, with a matching amount, gets it backfilled automatically after every upload, regardless of upload order); 49 passing tests, run automatically on every push via GitHub Actions (`.github/workflows/tests.yml` — badge above); Dockerfiles + docker-compose.
+**Completed:** all 9 workflow steps and all 9 required API endpoints from the assignment, plus batch and per-document delete endpoints and a source-document filter; CSV import (never rejects the whole file); real Anthropic PDF extraction for both invoice types and the multi-line bank statement; full server-side validation shared across both import paths; edit → revalidate → validate lifecycle with the 409 guard; batch summary; frontend covering upload, filtering (status + source + source filename), field-level error display, correction, and the record detail drawer — which for PDF-sourced records also renders the original PDF side-by-side with the extracted fields, so a reviewer can check the extraction against the source document without leaving the page; batch management (delete with confirmation, search-by-name, sort by date/name) for working with many batches at once; per-document deletion (remove one uploaded file and all the records it produced, without deleting the whole batch) with a duplicate-filename warning on re-upload; cross-document reconciliation (a record missing `counterparty_name` whose description references another same-batch record's reference/invoice_number, with a matching amount, gets it backfilled automatically after every upload, regardless of upload order); 50 passing tests, run automatically on every push via GitHub Actions (`.github/workflows/tests.yml` — badge above); Dockerfiles + docker-compose.
 
 **Not implemented** (all listed as optional bonus items in the assignment): authentication, pagination, background job processing (extraction is synchronous), idempotent import / duplicate-document detection, audit history for edits, multi-tenant isolation, provider fallback, cost/token usage tracking, field-level confidence display (only a record-level confidence is shown).
 
@@ -230,7 +231,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **No raw SQL anywhere.** Every query goes through the SQLAlchemy ORM with bound parameters — there's no string-built SQL for user input (batch names, filenames, filter values, edited field values) to inject into.
 - **CORS restricted to known origins** (`app/config.py`'s `cors_origins`, defaulting to the local dev frontend ports) — not `allow_origins=["*"]`.
 - **API keys never committed and never logged.** `ANTHROPIC_API_KEY` is read from an environment variable, `.env` is gitignored (verified: `git grep` across the full history finds no API key in this repo), and the Anthropic error-handling paths (`anthropic_provider.py`) log the SDK's own status/message via `logger.exception`, never the request itself — the key is never part of what gets logged.
-- **Uploads are validated by content, not just by trusting the client.** `app/upload_guards.py`: every CSV/PDF upload is capped at 10MB (rejects oversized uploads before they're processed or handed to the AI provider — cheap protection against accidental or malicious resource exhaustion), and every PDF is checked for the actual `%PDF-` file signature in its bytes, not just a `.pdf` string in the filename — a file renamed to end in `.pdf` without being one is rejected with a 400 before it's saved to disk or sent to the AI provider.
+- **Uploads are validated by content, not just by trusting the client.** `app/upload_guards.py`: every CSV/PDF upload is capped at `MAX_UPLOAD_MB` (20MB by default, configurable — see [Environment variables](#environment-variables); scanned/image-based bank statements can run much larger than the digitally-generated sample PDFs, so this is deliberately not a hardcoded constant) before it's processed or handed to the AI provider, and every PDF is checked for the actual `%PDF-` file signature in its bytes, not just a `.pdf` string in the filename — a file renamed to end in `.pdf` without being one is rejected with a 400 before it's saved to disk or sent to the AI provider.
 - **The uploaded-PDF-serving endpoint only serves what it stored.** `GET /records/{id}/source-file` resolves a path stored server-side against a fixed `uploads/` root (`app/services/storage.py`) — the client never supplies a filesystem path, so there's no path-traversal surface there.
 
 **Explicitly not covered** (all listed as optional bonus items in the assignment, not required, but worth being upfront about rather than silent):
@@ -258,7 +259,7 @@ Roughly in priority order if this were going to production:
 
 ## Tests
 
-`backend/tests/`, 49 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
+`backend/tests/`, 50 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
 
 - `test_validation.py` — unit tests directly against the shared validation engine: valid row, invalid date, unsupported currency, inconsistent net_amount (and within-tolerance acceptance), zero/negative amounts, missing required field, duplicate reference, invalid category/country, a syntactically-valid-but-unassigned country code (`"ZZ"`) correctly rejected against the real ISO 3166-1 list, malformed (comma) amount, status transitions including low-confidence PDF forcing review.
 - `test_csv_import.py` — the full provided sample CSV (asserts exactly 30 rows imported, 13 NEEDS_REVIEW / 17 VALID, matching the intentionally-invalid rows), source filename/batch association, a file that mixes one valid and one invalid row (whole file not rejected), batch summary endpoint.
@@ -282,7 +283,7 @@ Provided in `samples/`: `transactions_import.csv`, `invoice_legal_services.pdf`,
 - Every backend service module was exercised against the real sample data before moving on — the CSV importer was run against the actual `transactions_import.csv` and its output checked row-by-row against the 13 intentionally-invalid rows (`test_csv_import.py::test_full_sample_csv_import` pins this: 30 imported / 13 NEEDS_REVIEW / 17 VALID).
 - The AI provider integration was **run for real** against Anthropic's API with all three sample PDFs (not just unit-tested against a fake) — see the results table above, captured directly from that run.
 - The full frontend workflow (create batch → upload CSV → filter to NEEDS_REVIEW → open a record → see the exact invalid field highlighted with its message → correct it → re-run validation → see it become VALID → validate → see it become VALIDATED) was driven end-to-end in a real browser against the running backend, screenshotted at each step, not just assumed to work from the code.
-- The full `pytest` suite (49 tests) passes locally.
+- The full `pytest` suite (50 tests) passes locally.
 
 **Parts that needed correction/redesign during the session:**
 - The initial `datetime.utcnow()` usage in `models.py` triggered a deprecation warning under the installed SQLAlchemy/Python versions and was switched to `datetime.now(timezone.utc)`.

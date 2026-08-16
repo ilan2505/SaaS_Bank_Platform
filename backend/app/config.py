@@ -22,5 +22,10 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Scanned/image-based bank statement PDFs can run much larger than the
+    # digitally-generated sample documents; kept configurable rather than a
+    # hardcoded constant so it can be raised without a code change.
+    max_upload_mb: int = 20
+
 
 settings = Settings()
