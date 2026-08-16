@@ -16,6 +16,7 @@ A small application that imports, extracts, validates, corrects and approves fin
 - [Setup and run](#setup-and-run)
 - [Environment variables](#environment-variables)
 - [Architecture and technical choices](#architecture-and-technical-choices)
+- [Code walkthrough — what each file does](#code-walkthrough--what-each-file-does)
 - [Data model](#data-model)
 - [AI provider integration](#ai-provider-integration)
 - [Assumptions](#assumptions)
@@ -75,6 +76,10 @@ cd backend
 
 60 tests, all passing, no network calls (the AI provider is a fake test double — see [Tests](#tests)).
 
+### Whenever the schema changes
+
+Because this is SQLite with `Base.metadata.create_all()` (not a migration tool — see [Production improvements](#production-improvements)), a new column or table only appears on a **fresh** database file. If you pull a change that touches `models.py`, delete `backend/financial_records.db` before restarting the server — it's recreated automatically, empty, with the new schema.
+
 ## Environment variables
 
 **`backend/.env`** (see `backend/.env.example`)
@@ -102,33 +107,37 @@ cd backend
 software_engineer_task/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                 FastAPI app, CORS, router wiring
-│   │   ├── config.py                Settings (env vars)
-│   │   ├── database.py              SQLAlchemy engine/session
-│   │   ├── models.py                ORM models: ImportBatch, FinancialRecord, RecordEditHistory
-│   │   ├── schemas.py               Pydantic request/response models
-│   │   ├── upload_guards.py         Upload size limit + PDF signature check
-│   │   ├── iso_countries.py         ISO 3166-1 alpha-2 code list
+│   │   ├── main.py                    FastAPI app, CORS, router wiring
+│   │   ├── config.py                  Settings (env vars)
+│   │   ├── database.py                SQLAlchemy engine/session
+│   │   ├── models.py                  ORM models: ImportBatch, FinancialRecord, RecordEditHistory
+│   │   ├── schemas.py                 Pydantic request/response models
+│   │   ├── upload_guards.py           Upload size limit + PDF signature check
+│   │   ├── iso_countries.py           ISO 3166-1 alpha-2 code list
 │   │   ├── services/
-│   │   │   ├── validation.py        Field parsing + business rules (single source of truth)
-│   │   │   ├── csv_import.py        CSV → FinancialRecord rows
-│   │   │   ├── ai_provider.py       Provider-agnostic interface
+│   │   │   ├── validation.py          Field parsing + business rules (single source of truth)
+│   │   │   ├── csv_import.py          CSV → FinancialRecord rows
+│   │   │   ├── ai_provider.py         Provider-agnostic interface
 │   │   │   ├── anthropic_provider.py  Anthropic implementation
-│   │   │   ├── pdf_extraction.py    Orchestrates provider → FinancialRecord rows
-│   │   │   ├── reconciliation.py    Cross-document counterparty backfill (post-upload)
-│   │   │   ├── audit.py             Field-change snapshot/diff → RecordEditHistory
-│   │   │   └── storage.py           Uploaded PDF persistence, retrieval + content hashing
+│   │   │   ├── pdf_extraction.py      Orchestrates provider → FinancialRecord rows
+│   │   │   ├── reconciliation.py      Cross-document counterparty backfill (post-upload)
+│   │   │   ├── audit.py               Field-change snapshot/diff → RecordEditHistory
+│   │   │   └── storage.py             Uploaded PDF persistence, retrieval + content hashing
 │   │   └── routers/
-│   │       ├── batches.py           batch + upload endpoints
-│   │       └── records.py           record + validation endpoints
-│   └── tests/
+│   │       ├── batches.py             Batch + upload endpoints
+│   │       └── records.py             Record + validation endpoints
+│   └── tests/                         28 files → 60 tests, see Tests
 ├── frontend/
 │   └── src/
-│       ├── api.js                   Thin fetch wrapper over the backend API
-│       ├── App.jsx                  Top-level state/orchestration
-│       └── components/              Sidebar, UploadPanel, AnalyticsPanel, RecordTable, RecordDrawer
+│       ├── main.jsx                   React entry point
+│       ├── App.jsx                    Top-level state/orchestration
+│       ├── api.js                     Thin fetch wrapper over the backend API
+│       ├── constants.js               Field metadata + enum value lists
+│       ├── index.css                  All styling
+│       └── components/                Sidebar, UploadPanel, AnalyticsPanel, RecordTable, RecordDrawer
 ├── docker-compose.yml
-└── samples/                         The provided assignment files
+├── docs/DEMO.md                       Real captured end-to-end run
+└── samples/                           The provided assignment files
 ```
 
 **Key decisions:**
@@ -142,9 +151,66 @@ software_engineer_task/
 - **Duplicate detection is content-based (SHA-256), not filename-based.** A file renamed and re-uploaded is still caught; a genuinely different file that happens to share a name is not falsely blocked. It's a hard 409 rather than a soft warning, unlike the frontend's filename-based nudge (see [Known limitations](#known-limitations)) — there's no legitimate reason to re-upload byte-identical content, so there's nothing to ask the user to confirm.
 - **Audit history tracks *what* changed, not *who*.** `record_edit_history` logs field/old-value/new-value/source/timestamp for every real change (manual edit or automatic reconciliation), reusing the same snapshot-before/compare-after helper (`services/audit.py`) from both call sites so the two paths can't drift apart. There's no `user_id` column because there's no authentication anywhere in this system to attribute a change to — see [Production improvements](#production-improvements).
 
+## Code walkthrough — what each file does
+
+The tree above says *where* things live; this says what each file is actually responsible for. Read top-to-bottom and you've read the whole backend.
+
+### Backend — entry points & config
+
+| File | Responsibility |
+|---|---|
+| `app/main.py` | Creates the FastAPI app, runs `Base.metadata.create_all()` on startup (so a fresh SQLite file gets its schema automatically), adds the CORS middleware, mounts the `batches` and `records` routers, and exposes `GET /api/health`. |
+| `app/config.py` | The single `Settings` object (pydantic-settings) every other file imports for configuration — never `os.environ` directly. Resolves `.env` by an **absolute path** relative to this file, not the process's working directory, so it doesn't matter where `uvicorn` is launched from (this was an actual bug fixed during the session — see [AI tools used](#ai-tools-used)). |
+| `app/database.py` | The SQLAlchemy `engine`, the `SessionLocal` session factory, the `Base` declarative class every model inherits from, and `get_db()` — the FastAPI dependency that hands each request its own session and always closes it. |
+
+### Backend — data layer
+
+| File | Responsibility |
+|---|---|
+| `app/models.py` | The three ORM tables — `ImportBatch`, `FinancialRecord` (the core entity from the data dictionary, plus three implementation-only columns: `raw_values`, `source_document_path`, `source_document_hash`), and `RecordEditHistory` (the audit trail) — plus the five enums (`SourceType`, `RecordStatus`, `Currency`, `Category`, `PaymentMethod`) shared between the DB columns, the validation rules, and the AI extraction schema. |
+| `app/schemas.py` | The Pydantic models FastAPI actually serializes to JSON: `BatchCreate`, `BatchOut`, `BatchSummary`, `RecordOut`, `RecordUpdate`, `UploadResult`, `ValidationError`, `EditHistoryOut`. Kept separate from `models.py` on purpose — the API's shape (e.g. the computed `has_source_file` boolean) doesn't have to be identical to the storage shape. |
+| `app/iso_countries.py` | The 249 official ISO 3166-1 alpha-2 codes as a `frozenset`. Imported only by `validation.py`. |
+
+### Backend — business logic (`app/services/`)
+
+| File | Responsibility |
+|---|---|
+| `validation.py` | **The single source of truth.** `parse_record_fields()` turns loosely-typed input (a CSV cell, an AI-returned JSON value, an edit payload) into typed values, keeping the original string when something fails to parse. `check_business_rules()` applies every Data Dictionary rule (required fields, amount math, currency/category/country membership, duplicate reference). `determine_status()` decides `NEEDS_REVIEW` vs `VALID`. `record_to_raw_dict()` re-serializes an already-stored record back into strings so it can be re-parsed — used by both the revalidate endpoint and the edit endpoint's merge step. |
+| `csv_import.py` | `import_csv()`: reads a CSV row by row and runs each row through `validation.py`, independently — one bad row never rejects the file. |
+| `ai_provider.py` | The `AIProvider` abstract base class and the `ExtractionResult` dataclass. This is the seam: nothing outside this file and `anthropic_provider.py` knows which AI vendor is in use. |
+| `anthropic_provider.py` | The concrete Claude implementation. Builds the forced tool-use request (PDF as a base64 `document` content block + a JSON-schema tool the model must call), and converts every provider-side failure (timeout, API error, connection error, malformed/missing tool response) into an `ExtractionResult.error` string — it never lets an exception escape to the router. |
+| `pdf_extraction.py` | `get_provider()` (the factory FastAPI injects via `Depends`) and `import_pdf()`, which calls the provider and turns its output — or its error, via a placeholder `NEEDS_REVIEW` record — into `FinancialRecord` objects, through the same `validation.py` pipeline `csv_import.py` uses. |
+| `reconciliation.py` | `reconcile_batch()`, called after every upload: finds records missing `counterparty_name` whose *description* contains another same-batch record's reference/invoice_number (with a matching amount as a safety check), backfills the counterparty from that match, and revalidates the changed record. |
+| `audit.py` | `snapshot()` and `log_changes()` — the snapshot-before/diff-after helper shared by the manual-edit endpoint and `reconciliation.py`, so a user correction and an automatic backfill write to `RecordEditHistory` through identical logic. |
+| `storage.py` | Everything to do with an uploaded PDF's bytes on disk: `save_pdf()` (write under `backend/uploads/{batch_id}/`), `resolve()` (stored path → `Path`), `delete_batch_uploads()` (cleanup on batch delete), `hash_content()` (SHA-256, for duplicate detection). |
+
+### Backend — API (`app/routers/`)
+
+| File | Endpoints |
+|---|---|
+| `batches.py` | `POST /batches`, `GET /batches`, `DELETE /batches/{id}`, `DELETE /batches/{id}/documents`, `GET /batches/{id}`, `GET /batches/{id}/records`, `POST /batches/{id}/upload/csv`, `POST /batches/{id}/upload/pdf`. Also `_summarize()` (records → `BatchSummary`) and `_find_duplicate_document()` (the content-hash lookup). |
+| `records.py` | `GET /records/{id}`, `GET /records/{id}/errors`, `GET /records/{id}/source-file`, `GET /records/{id}/history`, `PATCH /records/{id}`, `POST /records/{id}/revalidate`, `POST /records/{id}/validate`. |
+
+`backend/tests/` — one file per concern; see [Tests](#tests) for exactly what each one asserts.
+
+### Frontend (`frontend/src/`)
+
+| File | Responsibility |
+|---|---|
+| `main.jsx` | React entry point — mounts `<App />`. |
+| `App.jsx` | All top-level state: which batch is selected, the active filters, the filtered record list (for the table) *and* a separate unfiltered one (for `AnalyticsPanel`, which always reflects the whole batch), and the handlers that wire the child components together (create/delete batch, upload, "something changed, refetch"). |
+| `api.js` | The **only** file that calls `fetch()`. One function per backend endpoint, plus a shared `handle()` that turns any non-2xx response into a thrown `Error` carrying the backend's `detail` message — every component just `catch`es and shows `err.message`. |
+| `constants.js` | `EDITABLE_FIELDS` (label, input type, select options — drives the record drawer's form generically) and the enum value lists (`CURRENCIES`, `CATEGORIES`, `PAYMENT_METHODS`), kept in sync with the backend's enums by hand (see [Known limitations](#known-limitations)). |
+| `index.css` | All styling for the app — plain CSS, no framework, no CSS-in-JS, roughly ordered top-to-bottom the way components appear on screen. |
+| `components/Sidebar.jsx` | Batch list: create form, search box, date/A–Z sort toggle, per-batch delete button. |
+| `components/UploadPanel.jsx` | The single file picker + Upload button (custom-styled to avoid the browser's localized native text), the client-side duplicate-filename warning before upload, and the "Uploaded files" list (PDF/CSV, each individually deletable) below it. |
+| `components/AnalyticsPanel.jsx` | The two charts (status breakdown, volume by category) — computed client-side from the batch's full unfiltered record list, so they don't change when the table's filters do. |
+| `components/RecordTable.jsx` | The filtered record list, one row per record, click to open the drawer. |
+| `components/RecordDrawer.jsx` | The record detail/edit panel: the original-PDF preview (PDF-sourced records only), the editable field grid with inline validation errors, the collapsible edit-history section, and the Save/Validate actions. |
+
 ## Data model
 
-Single core entity, `financial_record`, exactly as specified in the data dictionary, plus a lightweight `import_batch` parent:
+Single core entity, `financial_record`, exactly as specified in the data dictionary, plus a lightweight `import_batch` parent and an audit table:
 
 **`import_batch`**: `id`, `name`, `created_at` — a batch is just a named container; its summary (counts, source file list) is computed on read from its records, not stored redundantly.
 
@@ -210,14 +276,25 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 
 ## Assumptions
 
+**Reference & duplicate handling**
 - **Reference uniqueness is scoped to the import batch**, matching "unique business reference within an import" in the data dictionary — not global across all batches ever imported.
 - **Duplicate references: first occurrence wins.** When the same reference appears twice in one CSV/batch, the first row is left alone (it may well be valid) and the *second* (and any later) occurrence is flagged with a `reference` error. This matches how the sample CSV's `TX-2026-0003` duplicate is clearly meant to be caught.
-- **Duplicate-content detection is hard-rejected (409), not just flagged.** Uploading a file whose bytes exactly match one already in the batch — same content under any filename, or the same file selected twice in one multi-file upload — is refused outright rather than imported and marked `NEEDS_REVIEW`. Unlike a data-quality problem (which the review workflow is built to surface and let a human resolve), an exact re-upload has no legitimate resolution other than "don't do that," so there's nothing for a reviewer to correct.
-- **Editing and revalidation are separate API operations, merged into one UI action.** `PATCH /records/{id}` (correct) and `POST /records/{id}/revalidate` (re-run validation) are the two distinct endpoints the assignment lists as steps 6 and 7 — both still exist independently and can be called separately (see `/docs`). Early on, the frontend exposed them as two buttons ("Save corrections" then "Re-run validation"), matching the two-step reading literally; after using it, a single flow made more sense for a human reviewer, since there's no realistic case where you'd want to save a correction *without* immediately finding out whether it's now valid. The record drawer's "Save" button now calls both in sequence (edit, then revalidate) and shows the final, revalidated status — the API still has both steps, the UI just doesn't make you click twice for something you always want to do together.
-- **`country` is validated against the real ISO 3166-1 alpha-2 list** (`app/iso_countries.py`, all 249 officially assigned codes), not just a two-letter format — `"ZZ"` or `"XX"` are rejected even though they have the right shape, only actually-assigned codes like `"LU"` or `"GB"` pass.
-- **Bank statement PDFs: `country` is inferred from the account's IBAN prefix** (all lines share the account's country, here `LU`), since the statement has no per-line country. `counterparty_name` is *not* guessed this way — it's left null when the statement text doesn't name one, which is what correctly drives those rows to `NEEDS_REVIEW` (see table above) rather than silently fabricating a counterparty.
-- **Problem identified and solved: a bank statement line and the invoice it pays are two separate documents, so `counterparty_name` was always missing on the statement side.** `bank_statement_july_2026.pdf`'s line `STM-7713` ("Legal fees INV-LX-441", -4,680.00) is the payment for `invoice_legal_services.pdf` (`INV-LX-441`, LexBridge Advisory S.A., +4,680.00) — but each PDF is extracted independently, with no visibility into the other, so the AI has no way to know they're related. Extracting the statement alone can never fill in a name that isn't printed on it; only cross-referencing against the invoice (also in the same batch) can. Rather than leave every statement line permanently stuck in `NEEDS_REVIEW` for a fact the system could reasonably work out for itself, `app/services/reconciliation.py` now does that cross-referencing automatically: after every upload, it re-scans the whole batch for a record missing `counterparty_name` whose *description* contains another record's `reference` or `invoice_number`, with a matching amount as a safety check, and backfills `counterparty_name`/`counterparty_account` from the match — regardless of which document was uploaded first. This resolves `STM-7713` (matched against the invoice) and `STM-7716` ("Audit fee APL-Q2-2026", matched against the CSV row carrying that same `invoice_number`) automatically; see [AI provider integration](#ai-provider-integration) for why the other 6 statement lines correctly remain `NEEDS_REVIEW` — no matching document exists for them anywhere in the batch, so there's genuinely nothing to reconcile against. Deliberately **not** attempted: guessing a counterparty from the account holder's own name/IBAN printed in the statement header (`Northbridge Fund SCSp`, `LU12 0010 0012 3456 7891`) — that's *our own* account, not a counterparty, and would be constant, meaningless noise on every single line if used that way.
-- **CSV numeric parsing does not "fix" malformed input** (e.g. `"1,200.00"` is left as a parse error, not auto-stripped of its thousands separator), because the sample CSV clearly places that row alongside other *intentionally* invalid rows to test error handling, not locale-aware number parsing.
+- **Duplicate-content detection is hard-rejected (409), not just flagged.** Uploading a file whose bytes exactly match one already in the batch — same content under any filename, or the same file selected twice in one multi-file upload — is refused outright rather than imported and marked `NEEDS_REVIEW`. Unlike a data-quality problem (which the review workflow exists to surface and let a human resolve), an exact re-upload has no legitimate resolution other than "don't do that," so there's nothing for a reviewer to correct.
+
+**Correction workflow**
+- **Editing and revalidation are separate API operations, merged into one UI action.** `PATCH /records/{id}` (correct) and `POST /records/{id}/revalidate` (re-run validation) are the two distinct endpoints the assignment lists as steps 6 and 7 — both still exist independently and can be called separately (see `/docs`). Early on, the frontend exposed them as two buttons, matching the two-step reading literally; after using it, a single flow made more sense, since there's no realistic case where you'd want to save a correction *without* immediately finding out whether it's now valid. The record drawer's "Save" button now calls both in sequence and shows the final, revalidated status.
+
+**`country` validation**
+- **Validated against the real ISO 3166-1 alpha-2 list** (`app/iso_countries.py`, all 249 officially assigned codes), not just a two-letter format — `"ZZ"` or `"XX"` are rejected even though they have the right shape, only actually-assigned codes like `"LU"` or `"GB"` pass.
+- **Bank statement PDFs: `country` is inferred from the account's IBAN prefix** (all lines share the account's country, here `LU`), since the statement has no per-line country. `counterparty_name` is *not* guessed this way — it's left null when the statement text doesn't name one, which is what correctly drives those rows to `NEEDS_REVIEW` (see the AI provider table above) rather than silently fabricating a counterparty.
+
+**Cross-document reconciliation** — a problem identified and solved mid-session, worth spelling out:
+- **The problem:** a bank statement line and the invoice it pays are two separate documents, extracted independently, with no visibility into each other — so `counterparty_name` was structurally unfillable on the statement side. Example: `bank_statement_july_2026.pdf`'s line `STM-7713` ("Legal fees INV-LX-441", -4,680.00) is the payment for `invoice_legal_services.pdf` (`INV-LX-441`, LexBridge Advisory S.A., +4,680.00), but the AI extracting the statement has no way to know that.
+- **The fix:** `app/services/reconciliation.py` re-scans the whole batch after every upload for a record missing `counterparty_name` whose *description* contains another record's `reference` or `invoice_number`, with a matching amount as a safety check, and backfills from the match — regardless of which document was uploaded first. This resolves `STM-7713` (matched against the invoice) and `STM-7716` ("Audit fee APL-Q2-2026", matched against the CSV row carrying that same `invoice_number`) automatically.
+- **What's deliberately *not* attempted:** guessing a counterparty from the account holder's own name/IBAN printed in the statement header (`Northbridge Fund SCSp`, `LU12 0010 0012 3456 7891`) — that's *our own* account, not a counterparty, and would be constant, meaningless noise on every line if used that way. The other 6 statement lines correctly remain `NEEDS_REVIEW`: no matching document exists for them anywhere in the batch, so there's genuinely nothing to reconcile against.
+
+**CSV parsing**
+- **Numeric parsing does not "fix" malformed input** (e.g. `"1,200.00"` is left as a parse error, not auto-stripped of its thousands separator), because the sample CSV clearly places that row alongside other *intentionally* invalid rows to test error handling, not locale-aware number parsing.
 - **`fee_amount`/`tax_amount` default to 0** only when the source field is genuinely blank; if present but invalid (e.g. non-numeric), it's treated as a parse error, not silently defaulted.
 
 ## Completed / incomplete features
@@ -233,7 +310,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **Duplicate-document detection** (optional bonus item, implemented): every upload is hashed (SHA-256) and rejected with a 409 if byte-identical content already exists in the batch — catches the same file under a different name, and duplicates within one multi-file PDF upload, not just an exact filename match.
 - **Audit history** (optional bonus item, implemented): every field that actually changes value — through a manual correction or an automatic reconciliation backfill — is logged with its old value, new value, source, and timestamp, retrievable via `GET /records/{id}/history` and shown in the record drawer.
 - Cross-document reconciliation: a record missing `counterparty_name` whose description references another same-batch record's reference/invoice_number, with a matching amount, gets it backfilled automatically after every upload, regardless of upload order.
-- **Analytics panel** (not in the assignment at all — added beyond spec): a status breakdown (stacked bar) and total volume by category (horizontal bar, sorted descending) for the whole batch, independent of the active table filters. Volume is deliberately labeled "absolute," not "spend" or "income" — this sample data mixes invoice-style amounts (recorded at face value) with bank-statement-style amounts (recorded as signed cash flow) for the same real payment (see the `INV-LX-441` / `STM-7713` example under [Assumptions](#assumptions)), so the sign alone can't be trusted to mean expense vs. income without per-category business logic no one asked for here.
+- **Analytics panel** (not in the assignment at all — added beyond spec): a status breakdown (stacked bar) and total volume by category (horizontal bar, sorted descending, restricted to the 15 recognized categories) for the whole batch, independent of the active table filters. Volume is deliberately labeled "absolute," not "spend" or "income" — this sample data mixes invoice-style amounts (recorded at face value) with bank-statement-style amounts (recorded as signed cash flow) for the same real payment (see the `INV-LX-441` / `STM-7713` example under [Assumptions](#assumptions)), so the sign alone can't be trusted to mean expense vs. income without per-category business logic no one asked for here.
 - 60 passing tests, run automatically on every push via GitHub Actions (`.github/workflows/tests.yml` — badge above); Dockerfiles + docker-compose.
 
 **Not implemented** (all listed as optional bonus items in the assignment): authentication, pagination, background job processing (extraction is synchronous), multi-tenant isolation, provider fallback, cost/token usage tracking, field-level confidence display (only a record-level confidence is shown), deployment.
@@ -245,7 +322,8 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **No retry on transient AI provider failures** — a timeout produces a NEEDS_REVIEW placeholder immediately rather than retrying with backoff.
 - **SQLite file-based concurrency** — fine for a single dev instance; concurrent writers would need Postgres (already supported by swapping `DATABASE_URL`, see above).
 - **Duplicate-content detection is per-batch, not global.** The SHA-256 hash check (see [Assumptions](#assumptions)) only compares against documents already in *this* batch — uploading the exact same file into two different batches is allowed and not flagged, since a batch is the unit of "one import," not the whole system. The frontend also still has its separate, softer filename-based warning (client-side, skippable) as a first line of defense before the request even reaches the server.
-- **`VALID` means "passed the rules we can check mechanically," not "semantically correct."** Observed on a real run: the bank statement line `STM-7711`, description "Subscription proceeds," was extracted by Claude with `category = OTHER` instead of the obviously-better-fitting `SUBSCRIPTION` (the exact same description text, `TX-2026-0004` in the sample CSV, is correctly tagged `SUBSCRIPTION` there — so this wasn't an ambiguous case). `OTHER` is a syntactically valid enum member, so `check_business_rules` has no way to flag it — it only verifies category membership in the list, not whether it's the *right* member. Because this record also had a missing `counterparty_name`, it happened to land in `NEEDS_REVIEW` anyway and the miscategorization would very likely get caught during that review. But had every required field been present, this exact same wrong category would have produced a silent `VALID` record — nothing in the current UI singles out already-`VALID` records for a second look before someone clicks "Validate" on them. This isn't a bug to fix (no rule-based validator can verify semantic correctness — that's what the human review step is fundamentally for), but it's a real limit worth being explicit about: `VALID` is a floor, not a correctness guarantee.
+- **`VALID` means "passed the rules we can check mechanically," not "semantically correct."** Real example: the bank statement line `STM-7711`, description "Subscription proceeds," was extracted by Claude with `category = OTHER` instead of the obviously-better-fitting `SUBSCRIPTION` — the exact same description text (`TX-2026-0004` in the sample CSV) is correctly tagged `SUBSCRIPTION` elsewhere, so this wasn't an ambiguous case. `OTHER` is a syntactically valid enum member, so `check_business_rules` has no way to flag it — it only verifies category membership, not whether it's the *right* member. This record also had a missing `counterparty_name`, so it landed in `NEEDS_REVIEW` anyway; but had every required field been present, this same wrong category would have produced a silent `VALID` record, and nothing in the current UI singles out already-`VALID` records for a second look before "Validate." Not a bug to fix (no rule-based validator can verify semantic correctness — that's what human review is for) — just a limit worth being explicit about: `VALID` is a floor, not a correctness guarantee.
+- **Frontend enums are hand-duplicated from the backend.** `frontend/src/constants.js`'s `CATEGORIES`/`CURRENCIES`/`PAYMENT_METHODS` mirror `backend/app/models.py`'s enums by copy-paste, not by any shared source. Adding a 16th category means editing both files; forgetting the frontend one wouldn't break validation (the backend still enforces the real list) but would let the drawer's dropdown silently omit a valid option.
 
 ## Security basics
 
@@ -253,7 +331,7 @@ Single core entity, `financial_record`, exactly as specified in the data diction
 - **No raw SQL anywhere.** Every query goes through the SQLAlchemy ORM with bound parameters — there's no string-built SQL for user input (batch names, filenames, filter values, edited field values) to inject into.
 - **CORS restricted to known origins** (`app/config.py`'s `cors_origins`, defaulting to the local dev frontend ports) — not `allow_origins=["*"]`.
 - **API keys never committed and never logged.** `ANTHROPIC_API_KEY` is read from an environment variable, `.env` is gitignored (verified: `git grep` across the full history finds no API key in this repo), and the Anthropic error-handling paths (`anthropic_provider.py`) log the SDK's own status/message via `logger.exception`, never the request itself — the key is never part of what gets logged.
-- **Uploads are validated by content, not just by trusting the client.** `app/upload_guards.py`: every CSV/PDF upload is capped at `MAX_UPLOAD_MB` (20MB by default, configurable — see [Environment variables](#environment-variables); scanned/image-based bank statements can run much larger than the digitally-generated sample PDFs, so this is deliberately not a hardcoded constant) before it's processed or handed to the AI provider, and every PDF is checked for the actual `%PDF-` file signature in its bytes, not just a `.pdf` string in the filename — a file renamed to end in `.pdf` without being one is rejected with a 400 before it's saved to disk or sent to the AI provider.
+- **Uploads are validated by content, not just by trusting the client.** `app/upload_guards.py`: every CSV/PDF upload is capped at `MAX_UPLOAD_MB` (20MB by default, configurable — see [Environment variables](#environment-variables)) before it's processed or handed to the AI provider, and every PDF is checked for the actual `%PDF-` file signature in its bytes, not just a `.pdf` string in the filename — a file renamed to end in `.pdf` without being one is rejected with a 400 before it's saved to disk or sent to the AI provider.
 - **The uploaded-PDF-serving endpoint only serves what it stored.** `GET /records/{id}/source-file` resolves a path stored server-side against a fixed `uploads/` root (`app/services/storage.py`) — the client never supplies a filesystem path, so there's no path-traversal surface there.
 
 **Explicitly not covered** (all listed as optional bonus items in the assignment, not required, but worth being upfront about rather than silent):
@@ -275,18 +353,18 @@ Roughly in priority order if this were going to production:
 6. **Structured logging + tracing** around the AI call (latency, token counts, error rates) — currently just Python `logging`.
 7. **Field-level confidence** from the provider (currently only record-level) to let the UI highlight exactly which extracted fields are shaky.
 8. **Downstream export of `VALIDATED` records.** Today, "Validate" only flips a status flag in place — the record was already persisted at import/extraction time, and validating doesn't move it anywhere. In production, a `VALIDATED` record is the trigger for the next step in the pipeline: exporting/syncing it to the organization's actual accounting system (ERP, general ledger) or emitting an event/webhook for downstream consumers, plus stamping it with an export timestamp so it isn't re-sent. That integration is out of scope here (no target system was specified), but the status field already exists as the natural hook to build it on.
-9. **Attribution ("who") on audit history.** `record_edit_history` (below) captures *what* changed, *from what*, *to what*, and *when*, and *how* (manual edit vs. automatic reconciliation) — but not *who*, since there's no user/auth concept in this system at all. Real attribution needs the authentication layer from point 3 first; the history table is already shaped to add a `user_id` column to once that exists.
-11. **Full invoice ↔ bank statement linking (beyond the counterparty backfill already implemented).** As of `app/services/reconciliation.py`, a record missing `counterparty_name` whose *description* contains another same-batch record's `reference`/`invoice_number` — with a matching amount, e.g. the bank statement's `STM-7713` line ("Legal fees INV-LX-441", -4,680) against the invoice record `INV-LX-441` (+4,680) — gets its counterparty backfilled from that match automatically, re-running after every upload so order doesn't matter (invoice-then-statement or statement-then-invoice both resolve). What this **doesn't** do: the two records still exist as fully independent rows with no stored link between them, opposite signs, and nothing stops both from being validated and both being counted in a downstream sum — so the double-counting risk described in earlier discussion is only half-solved (the missing-field annoyance is gone; the aggregation-safety problem remains). A full solution would store the match itself (e.g. a `reconciled_with_record_id` field) and either suppress one side from totals or make the link explicit in the UI.
+9. **Attribution ("who") on audit history.** `record_edit_history` captures *what* changed, *from what*, *to what*, *when*, and *how* (manual edit vs. automatic reconciliation) — but not *who*, since there's no user/auth concept in this system at all. Real attribution needs the authentication layer from point 3 first; the history table is already shaped to add a `user_id` column to once that exists.
+10. **Full invoice ↔ bank statement linking**, beyond the counterparty backfill already implemented. Today, reconciliation fills in a missing `counterparty_name`/`counterparty_account`, but the two records (e.g. the invoice `INV-LX-441` and the statement line `STM-7713`) still exist as fully independent rows with no stored link between them and opposite signs — nothing stops both from being validated and both being counted in a downstream sum. A full solution would store the match itself (e.g. a `reconciled_with_record_id` field) and either suppress one side from totals or make the link explicit in the UI.
+11. **Shared enum source between frontend and backend** (see [Known limitations](#known-limitations)) — e.g. generate `constants.js`'s value lists from the OpenAPI schema FastAPI already produces, instead of hand-copying them.
 
 ## Tests
 
 `backend/tests/`, 60 tests, run with `pytest` (no real network calls — the AI provider tests use a `FakeProvider` test double injected via FastAPI's dependency override, so the suite is fast and deterministic):
 
 - `test_validation.py` — unit tests directly against the shared validation engine: valid row, invalid date, unsupported currency, inconsistent net_amount (and within-tolerance acceptance), zero/negative amounts, missing required field, duplicate reference, invalid category/country, a syntactically-valid-but-unassigned country code (`"ZZ"`) correctly rejected against the real ISO 3166-1 list, malformed (comma) amount, status transitions including low-confidence PDF forcing review.
-- `test_csv_import.py` — the full provided sample CSV (asserts exactly 30 rows imported, 13 NEEDS_REVIEW / 17 VALID, matching the intentionally-invalid rows), source filename/batch association, a file that mixes one valid and one invalid row (whole file not rejected), batch summary endpoint.
+- `test_csv_import.py` — the full provided sample CSV (asserts exactly 30 rows imported, 13 NEEDS_REVIEW / 17 VALID, matching the intentionally-invalid rows), source filename/batch association, a file that mixes one valid and one invalid row (whole file not rejected), batch summary endpoint, batch deletion (removes it and cascades to its records; unknown batch → 404), filtering records by source document name, and per-document deletion (removes only that document's records; unknown document → 404).
 - `test_correction_flow.py` — validate rejected (409) while NEEDS_REVIEW, full correct → revalidate → VALID → validate → VALIDATED cycle, revalidation that's still invalid, the record-errors endpoint.
 - `test_pdf_extraction.py` — provider error/timeout doesn't crash (produces a NEEDS_REVIEW placeholder), invalid structured response handled gracefully, missing required field → NEEDS_REVIEW, low confidence forces NEEDS_REVIEW even with complete fields, a bank-statement-shaped response produces multiple records, duplicate reference across PDF-extracted records is flagged, original PDF is stored and servable via the source-file endpoint, CSV records correctly report no source file, deleting a document removes its records and its stored PDF.
-- `test_csv_import.py` also covers batch deletion (removes it and cascades to its records; unknown batch → 404), filtering records by source document name, and per-document deletion (removes only that document's records; unknown document → 404).
 - `test_reconciliation.py` — a statement line uploaded *after* the invoice it references is backfilled immediately; one uploaded *before* is backfilled retroactively once the invoice arrives; a CSV row's `invoice_number` reconciles a PDF statement line; an unrelated description is left alone; a reference match with a mismatched amount is correctly treated as a false positive and not linked.
 - `test_upload_guards.py` — an oversized upload is rejected (413) at both the unit level and through the real CSV endpoint; PDF content lacking the `%PDF-` signature is rejected (400) at both the unit level and through the real upload endpoint, even when named `*.pdf`; the size limit is confirmed configurable via `settings.max_upload_mb`.
 - `test_audit_history.py` — editing a field creates a history entry with the correct old/new values; saving without changing anything creates none; changing two fields creates two entries; an automatic reconciliation backfill is logged with `source="reconciliation"`; the history endpoint 404s for an unknown record.
@@ -311,7 +389,7 @@ Provided in `samples/`: `transactions_import.csv`, `invoice_legal_services.pdf`,
 **Parts that needed correction/redesign during the session:**
 - The initial `datetime.utcnow()` usage in `models.py` triggered a deprecation warning under the installed SQLAlchemy/Python versions and was switched to `datetime.now(timezone.utc)`.
 - `Settings.env_file` initially resolved `.env` relative to the process's current working directory, which broke when the backend was launched from a different working directory (surfaced concretely as `ANTHROPIC_API_KEY is not configured` errors during manual browser testing even though `backend/.env` was correctly filled in) — fixed to resolve the `.env` path relative to the config module's own location instead.
-- The record-detail drawer originally refetched the *filtered* record list after a revalidate/validate action to refresh its state; when a record's status changed such that it no longer matched the active filter (e.g. NEEDS_REVIEW → VALID while filtering to "Needs review"), the drawer would silently close instead of showing the new status. Fixed to fetch the single record by ID directly, so the drawer stays open and the user can immediately continue (e.g. click "Validate" right after "Re-run validation" turns it VALID) — this was caught by actually clicking through the flow in a browser, not from reading the code.
+- The record-detail drawer originally refetched the *filtered* record list after a revalidate/validate action to refresh its state; when a record's status changed such that it no longer matched the active filter (e.g. NEEDS_REVIEW → VALID while filtering to "Needs review"), the drawer would silently close instead of showing the new status. Fixed to fetch the single record by ID directly, so the drawer stays open and the user can immediately continue — this was caught by actually clicking through the flow in a browser, not from reading the code.
 - The initial `country` validation only checked *format* (`^[A-Z]{2}$`), which would silently accept an unassigned code like `"ZZ"` — a real gap against the data dictionary's "must be a two-letter ISO code" rule, initially shipped as a documented, deliberate scope trade-off rather than an oversight. When re-checked line-by-line against the data dictionary's rule list, it was upgraded to validate against the actual 249-code ISO 3166-1 alpha-2 list (`app/iso_countries.py`) instead of trusting the format alone.
 
 I can walk through and explain any part of this codebase in the follow-up interview, including the reasoning behind each of the assumptions above.
