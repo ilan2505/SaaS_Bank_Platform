@@ -231,6 +231,7 @@ Roughly in priority order if this were going to production:
 7. **Cost/token usage tracking** per extraction call, and a provider fallback (e.g. Anthropic → OpenAI) on repeated failures.
 8. **Structured logging + tracing** around the AI call (latency, token counts, error rates) — currently just Python `logging`.
 9. **Field-level confidence** from the provider (currently only record-level) to let the UI highlight exactly which extracted fields are shaky.
+10. **Downstream export of `VALIDATED` records.** Today, "Validate" only flips a status flag in place — the record was already persisted at import/extraction time, and validating doesn't move it anywhere. In production, a `VALIDATED` record is the trigger for the next step in the pipeline: exporting/syncing it to the organization's actual accounting system (ERP, general ledger) or emitting an event/webhook for downstream consumers, plus stamping it with an export timestamp so it isn't re-sent. That integration is out of scope here (no target system was specified), but the status field already exists as the natural hook to build it on.
 
 ## Tests
 
